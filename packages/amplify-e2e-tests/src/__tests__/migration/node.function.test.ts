@@ -52,11 +52,12 @@ describe('nodejs version migration tests', () => {
       'backend',
       'auth',
       authResourceName,
-      `${authResourceName}-cloudformation-template.yml`,
+      'build',
+      `${authResourceName}-cloudformation-template.json`,
     );
     let authStackContent = fs.readFileSync(authStackFileName).toString();
 
-    authStackContent = authStackContent.replace('nodejs12.x', 'nodejs10.x');
+    authStackContent = authStackContent.replace('nodejs14.x', 'nodejs10.x');
 
     fs.writeFileSync(authStackFileName, authStackContent, 'utf-8');
 
@@ -83,8 +84,8 @@ describe('nodejs version migration tests', () => {
     functionStackContent = fs.readFileSync(functionStackFileName).toString();
 
     expect(projectConfigContent.indexOf('3.1')).toBeGreaterThan(0);
-    expect(authStackContent.indexOf('nodejs12.x')).toBeGreaterThan(0);
-    expect(functionStackContent.indexOf('nodejs12.x')).toBeGreaterThan(0);
+    expect(authStackContent.indexOf('nodejs14.x')).toBeGreaterThan(0);
+    expect(functionStackContent.indexOf('nodejs14.x')).toBeGreaterThan(0);
   });
 
   function amplifyNodeMigrationAndPush(cwd: string) {

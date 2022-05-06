@@ -1,3 +1,4 @@
+/* eslint-disable */
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs-extra';
@@ -14,6 +15,10 @@ function getAmplifyConfigAndroidPath(projRoot: string): string {
 
 function getAmplifyConfigIOSPath(projRoot: string): string {
   return path.join(projRoot, 'amplifyconfiguration.json');
+}
+
+function getAmplifyConfigFlutterPath(projRoot: string): string {
+  return path.join(projRoot, 'lib', 'amplifyconfiguration.dart');
 }
 
 function getAmplifyDirPath(projRoot: string): string {
@@ -63,7 +68,11 @@ function getCloudBackendConfig(projectRoot: string) {
 }
 
 function getParameterPath(projRoot: string, category: string, resourceName: string) {
-  return path.join(projRoot, 'amplify', 'backend', category, resourceName, 'parameters.json');
+  return path.join(projRoot, 'amplify', 'backend', category, resourceName, 'build', 'parameters.json');
+}
+
+function getCLIInputsPath(projRoot: string, category: string, resourceName: string) {
+  return path.join(projRoot, 'amplify', 'backend', category, resourceName, 'cli-inputs.json');
 }
 
 function getCategoryParameterPath(projRoot: string, category: string, resourceName: string) {
@@ -103,6 +112,12 @@ function getAmplifyIOSConfig(projectRoot: string): any {
   return JSONUtilities.readJson(configPath);
 }
 
+function getAmplifyFlutterConfig(projectRoot: string): any {
+  const configPath = getAmplifyConfigFlutterPath(projectRoot);
+  const dartFile = fs.readFileSync(configPath);
+  return JSON.parse(dartFile.toString().split(/'''/)[1]);
+}
+
 function getDeploymentSecrets(): any {
   const deploymentSecretsPath: string = path.join(os.homedir(), '.aws', 'amplify', 'deployment-secrets.json');
   return (
@@ -135,6 +150,20 @@ function setParameters(projRoot: string, category: string, resourceName: string,
   JSONUtilities.writeJson(parametersPath, parameters);
 }
 
+export function cliInputsExists(projRoot: string, category: string, resourceName: string): boolean {
+  return fs.existsSync(getCLIInputsPath(projRoot, category, resourceName));
+}
+
+export function getCLIInputs(projRoot: string, category: string, resourceName: string): any {
+  const parametersPath = getCLIInputsPath(projRoot, category, resourceName);
+  return JSONUtilities.parse(fs.readFileSync(parametersPath, 'utf8'));
+}
+
+export function setCLIInputs(projRoot: string, category: string, resourceName: string, parameters: unknown) {
+  const parametersPath = getCLIInputsPath(projRoot, category, resourceName);
+  JSONUtilities.writeJson(parametersPath, parameters);
+}
+
 function getCategoryParameters(projRoot: string, category: string, resourceName: string): any {
   const filepath = getCategoryParameterPath(projRoot, category, resourceName);
   return JSONUtilities.parse(fs.readFileSync(filepath, 'utf8'));
@@ -148,10 +177,12 @@ function setCategoryParameters(projRoot: string, category: string, resourceName:
 export {
   getProjectMeta,
   getProjectTags,
+  getAmplifyFlutterConfig,
   getBackendAmplifyMeta,
   getAwsAndroidConfig,
   getAwsIOSConfig,
   getAmplifyIOSConfig,
+  getAmplifyConfigFlutterPath,
   getAWSConfigAndroidPath,
   getAmplifyConfigAndroidPath,
   getAmplifyConfigIOSPath,
@@ -172,3 +203,4 @@ export {
   getLocalEnvInfo,
   getCustomPoliciesPath,
 };
+/* eslint-enable */

@@ -2,17 +2,19 @@ import { stateManager } from 'amplify-cli-core';
 import { provider, ServiceName } from '../../service-utils/constants';
 import { getMapStyleComponents, MapStyle } from '../../service-utils/mapParams';
 import { DataSourceIntendedUse } from '../../service-utils/placeIndexParams';
-import { AccessType, DataProvider, PricingPlan } from '../../service-utils/resourceParams';
+import { AccessType, DataProvider } from '../../service-utils/resourceParams';
+import { getCurrentMapParameters, getMapFriendlyNames } from '../../service-utils/mapUtils';
+import { getCurrentPlaceIndexParameters } from '../../service-utils/placeIndexUtils';
+import { getCurrentGeofenceCollectionParameters } from '../../service-utils/geofenceCollectionUtils';
 
 jest.mock('amplify-cli-core');
 
-describe('Test Map resource utility functions', () => {
+describe('Test resource utility functions', () => {
     const map1Params = {
         service: ServiceName.Map,
         isDefault: false,
         providerPlugin: provider,
         mapStyle: MapStyle.VectorEsriNavigation,
-        pricingPlan: PricingPlan.MobileAssetTracking,
         accessType: AccessType.AuthorizedAndGuestUsers
     };
     const map2Params = {
@@ -20,7 +22,6 @@ describe('Test Map resource utility functions', () => {
         isDefault: true,
         providerPlugin: provider,
         mapStyle: MapStyle.VectorEsriStreets,
-        pricingPlan: PricingPlan.MobileAssetManagement,
         accessType: AccessType.AuthorizedUsers
     };
     const placeIndex1Params = {
@@ -29,7 +30,6 @@ describe('Test Map resource utility functions', () => {
         providerPlugin: provider,
         dataProvider: DataProvider.Esri,
         dataSourceIntendedUse: DataSourceIntendedUse.Storage,
-        pricingPlan: PricingPlan.RequestBasedUsage,
         accessType: AccessType.AuthorizedAndGuestUsers
     };
     const placeIndex2Params = {
@@ -38,8 +38,13 @@ describe('Test Map resource utility functions', () => {
         providerPlugin: provider,
         dataProvider: DataProvider.Here,
         dataSourceIntendedUse: DataSourceIntendedUse.SingleUse,
-        pricingPlan: PricingPlan.MobileAssetManagement,
         accessType: AccessType.AuthorizedUsers
+    };
+    const geofenceCollection1Params = {
+        service: ServiceName.GeofenceCollection,
+        isDefault: false,
+        providerPlugin: provider,
+        accessType: AccessType.CognitoGroups
     };
 
     beforeEach(() => {
@@ -49,25 +54,26 @@ describe('Test Map resource utility functions', () => {
                 map1: map1Params,
                 map2: map2Params,
                 placeIndex1: placeIndex1Params,
-                placeIndex2: placeIndex2Params
+                placeIndex2: placeIndex2Params,
+                geofenceCollection1: geofenceCollection1Params
             }
         });
     });
 
 
-    it('gets current map parameters from meta file', async() => {
-        const getCurrentMapParameters = require('../../service-utils/mapUtils').getCurrentMapParameters;
+    it('gets current map parameters', async() => {
+        const groupPermissions = ['mockCognitoGroup'];
+        stateManager.getResourceInputsJson = jest.fn().mockReturnValue({groupPermissions: groupPermissions});
         const mapParams = await getCurrentMapParameters('map1');
         expect({
             ...getMapStyleComponents(map1Params.mapStyle),
-            pricingPlan: map1Params.pricingPlan,
             accessType: map1Params.accessType,
-            isDefault: map1Params.isDefault
+            isDefault: map1Params.isDefault,
+            groupPermissions: groupPermissions
         }).toEqual(mapParams);
     });
 
     it('generates friendly names for maps containing the map styles', async() => {
-        const getMapFriendlyNames = require('../../service-utils/mapUtils').getMapFriendlyNames;
         const mapFriendlyNames = await getMapFriendlyNames(['map1', 'map2']);
         expect(mapFriendlyNames).toEqual([
             `map1 (${map1Params.mapStyle})`,
@@ -75,15 +81,32 @@ describe('Test Map resource utility functions', () => {
         ]);
     });
 
-    it('gets current place index parameters from meta file', async() => {
-        const getCurrentPlaceIndexParameters = require('../../service-utils/placeIndexUtils').getCurrentPlaceIndexParameters;
+    it('gets current place index parameters', async() => {
+        const groupPermissions = ['mockCognitoGroup'];
+        stateManager.getResourceInputsJson = jest.fn().mockReturnValue({groupPermissions: groupPermissions});
         const placeIndexParams = await getCurrentPlaceIndexParameters('placeIndex1');
         expect({
             dataProvider: placeIndex1Params.dataProvider,
             dataSourceIntendedUse: placeIndex1Params.dataSourceIntendedUse,
-            pricingPlan: placeIndex1Params.pricingPlan,
             accessType: placeIndex1Params.accessType,
-            isDefault: placeIndex1Params.isDefault
+            isDefault: placeIndex1Params.isDefault,
+            groupPermissions: groupPermissions
         }).toEqual(placeIndexParams);
+    });
+
+    it('gets current geofence collection parameters', async() => {
+        const groupPermissions = {
+            mockCognitoGroup: [
+                "Read geofence",
+                "Create/Update geofence"
+            ]
+        }
+        stateManager.getResourceInputsJson = jest.fn().mockReturnValue({groupPermissions: groupPermissions});
+        const geofenceCollectionParams = await getCurrentGeofenceCollectionParameters('geofenceCollection1');
+        expect({
+            accessType: geofenceCollection1Params.accessType,
+            isDefault: geofenceCollection1Params.isDefault,
+            groupPermissions: groupPermissions
+        }).toEqual(geofenceCollectionParams);
     });
 });

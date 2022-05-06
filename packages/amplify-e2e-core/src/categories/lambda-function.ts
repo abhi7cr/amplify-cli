@@ -28,6 +28,7 @@ const javaTemplateChoices = ['Hello World'];
 
 const nodeJSTemplateChoices = [
   'CRUD function for DynamoDB (Integration with API Gateway)',
+  'GraphQL Lambda Authorizer',
   'Hello World',
   'Lambda trigger',
   'Serverless ExpressJS function (Integration with API Gateway)',
@@ -41,6 +42,11 @@ const appSyncOptions = ['Query', 'Mutation', 'Subscription'];
 
 const additionalPermissions = (cwd: string, chain: ExecutionContext, settings: any) => {
   multiSelect(chain.wait('Select the categories you want this function to have access to'), settings.permissions, settings.choices);
+
+  if (!settings.resources) {
+    return;
+  }
+
   if (settings.resourceChoices === undefined) {
     settings.resourceChoices = settings.resources;
   }

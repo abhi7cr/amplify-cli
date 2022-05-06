@@ -1,6 +1,6 @@
 {
   "name": "amplify-category-function",
-  "version": "2.36.0",
+  "version": "4.0.3",
   "description": "amplify-cli function plugin",
   "repository": {
     "type": "git",
@@ -22,17 +22,17 @@
     "aws"
   ],
   "dependencies": {
-    "amplify-cli-core": "1.31.0",
-    "amplify-function-plugin-interface": "1.9.1",
+    "amplify-cli-core": "2.6.0",
+    "amplify-function-plugin-interface": "1.9.4",
     "archiver": "^5.3.0",
-    "aws-sdk": "^2.963.0",
+    "aws-sdk": "^2.1113.0",
     "chalk": "^4.1.1",
     "cloudform-types": "^4.2.0",
     "enquirer": "^2.3.6",
-    "folder-hash": "^4.0.1",
+    "folder-hash": "^4.0.2",
     "fs-extra": "^8.1.0",
     "globby": "^11.0.3",
-    "graphql-transformer-core": "6.30.1",
+    "graphql-transformer-core": "^7.5.0",
     "inquirer": "^7.3.3",
     "inquirer-datepicker": "^2.0.0",
     "jstreemap": "^1.28.2",
@@ -40,10 +40,10 @@
     "mime-types": "^2.1.26",
     "ora": "^4.0.3",
     "promise-sequential": "^1.1.1",
-    "uuid": "^3.4.0"
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
-    "@types/folder-hash": "^4.0.0"
+    "@types/folder-hash": "^4.0.1"
   },
   "jest": {
     "collectCoverage": true,

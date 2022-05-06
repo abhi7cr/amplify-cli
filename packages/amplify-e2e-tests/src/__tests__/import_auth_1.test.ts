@@ -1,52 +1,38 @@
-import * as fs from 'fs-extra';
-import * as path from 'path';
-
-import { $TSObject, JSONUtilities } from 'amplify-cli-core';
+import { $TSObject, JSONUtilities, stateManager } from 'amplify-cli-core';
 import {
-  AddAuthUserPoolOnlyWithOAuthSettings,
+  addApi,
   addApiWithCognitoUserPoolAuthTypeWhenAuthExists,
   addAuthUserPoolOnlyWithOAuth,
+  AddAuthUserPoolOnlyWithOAuthSettings,
   addFunction,
-  amplifyPull,
   amplifyPush,
   amplifyPushAuth,
   amplifyStatus,
   createNewProjectDir,
   deleteProject,
   deleteProjectDir,
-  getAppId,
-  getEnvVars,
-  getTeamProviderInfo,
   initJSProjectWithProfile,
-  initProjectWithAccessKey,
-  addApi,
   updateApiSchema,
 } from 'amplify-e2e-core';
+import * as fs from 'fs-extra';
+import * as path from 'path';
 import {
-  AppClientSettings,
-  AuthProjectDetails,
-  addAppClientWithSecret,
-  addAppClientWithoutSecret,
   addS3WithAuthConfigurationMismatchErrorExit,
+  AuthProjectDetails,
   createUserPoolOnlyWithOAuthSettings,
-  deleteAppClient,
   expectApiHasCorrectAuthConfig,
-  expectAuthLocalAndOGMetaFilesOutputMatching,
+  expectAuthParametersMatch,
   expectAuthProjectDetailsMatch,
   expectLocalAndCloudMetaFilesMatching,
-  expectLocalAndPulledBackendConfigMatching,
   expectLocalTeamInfoHasNoCategories,
   expectNoAuthInMeta,
   getAuthProjectDetails,
   getOGAuthProjectDetails,
   getShortId,
-  importIdentityPoolAndUserPool,
   importUserPoolOnly,
   readRootStack,
   removeImportedAuthWithDefault,
 } from '../import-helpers';
-import { addEnvironmentWithImportedAuth, checkoutEnvironment, removeEnvironment } from '../environment/env';
-
 import { getCognitoResourceName } from '../schema-api-directives/authHelper';
 import { randomizedFunctionName } from '../schema-api-directives/functionTester';
 
@@ -160,7 +146,7 @@ describe('auth import userpool only', () => {
   it('imported auth with graphql api and cognito should push', async () => {
     await initJSProjectWithProfile(projectRoot, projectSettings);
     await importUserPoolOnly(projectRoot, ogSettings.userPoolName, { native: '_app_client ', web: '_app_clientWeb' }); // space at to make sure its not web client
-    await addApiWithCognitoUserPoolAuthTypeWhenAuthExists(projectRoot);
+    await addApiWithCognitoUserPoolAuthTypeWhenAuthExists(projectRoot, { transformerVersion: 1 });
     await amplifyPush(projectRoot);
 
     expectApiHasCorrectAuthConfig(projectRoot, projectPrefix, ogProjectDetails.meta.UserPoolId);
@@ -239,9 +225,31 @@ describe('auth import userpool only', () => {
     await importUserPoolOnly(projectRoot, ogSettings.userPoolName, { native: '_app_client ', web: '_app_clientWeb' });
     await addApi(projectRoot, {
       IAM: {},
+      transformerVersion: 1,
     });
     await updateApiSchema(projectRoot, projectPrefix, 'model_with_iam_auth.graphql');
     await amplifyPush(projectRoot);
     // successful push indicates iam auth works when only importing user pool
+  });
+
+  it('should update parameters.json with auth configuration', async () => {
+    await initJSProjectWithProfile(projectRoot, projectSettings);
+    await importUserPoolOnly(projectRoot, ogSettings.userPoolName, { native: '_app_client ', web: '_app_clientWeb' });
+
+    const ogProjectAuthParameters = stateManager.getResourceParametersJson(ogProjectRoot, 'auth', ogProjectDetails.authResourceName);
+
+    let projectDetails = getAuthProjectDetails(projectRoot);
+    let projectAuthParameters = stateManager.getResourceParametersJson(projectRoot, 'auth', projectDetails.authResourceName);
+    expectAuthParametersMatch(projectAuthParameters, ogProjectAuthParameters);
+
+    await amplifyStatus(projectRoot, 'Import');
+    await amplifyPushAuth(projectRoot);
+    await amplifyStatus(projectRoot, 'No Change');
+
+    expectLocalAndCloudMetaFilesMatching(projectRoot);
+
+    projectDetails = getAuthProjectDetails(projectRoot);
+    projectAuthParameters = stateManager.getResourceParametersJson(projectRoot, 'auth', projectDetails.authResourceName);
+    expectAuthParametersMatch(projectAuthParameters, ogProjectAuthParameters);
   });
 });

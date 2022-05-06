@@ -52,6 +52,7 @@ export type ContainersStackProps = Readonly<{
   createCloudMapService?: boolean;
   gitHubSourceActionInfo?: GitHubSourceActionInfo;
   existingEcrRepositories: Set<string>;
+  currentStackName: string;
 }>;
 export abstract class ContainersStack extends cdk.Stack {
   protected readonly vpcId: string;
@@ -119,7 +120,7 @@ export abstract class ContainersStack extends cdk.Stack {
     const { pipelineWithAwaiter } = this.pipeline({
       skipWait,
       service,
-      containersInfo,
+      containersInfo: containersInfo.filter(container => container.repository),
       gitHubSourceActionInfo,
     });
 
@@ -240,6 +241,7 @@ export abstract class ContainersStack extends cdk.Stack {
       taskPorts,
       isInitialDeploy,
       desiredCount,
+      currentStackName,
       createCloudMapService,
     } = this.props;
 
@@ -313,7 +315,7 @@ export abstract class ContainersStack extends cdk.Stack {
         if (build) {
           const logicalId = `${name}Repository`;
 
-          const repositoryName = `${this.envName}-${categoryName}-${apiName}-${name}`;
+          const repositoryName = `${currentStackName}-${categoryName}-${apiName}-${name}`;
 
           if (this.props.existingEcrRepositories.has(repositoryName)) {
             repository = ecr.Repository.fromRepositoryName(this, logicalId, repositoryName);
@@ -347,7 +349,7 @@ export abstract class ContainersStack extends cdk.Stack {
 
         containerSecrets.forEach((s, i) => {
           if (secretsArns.has(s)) {
-            secrets[s] = ecs.Secret.fromSecretsManager(ssm.Secret.fromSecretCompleteArn(this, `${name}secret${i + 1}`, secretsArns.get(s)));
+            secrets[s] = ecs.Secret.fromSecretsManager(ssm.Secret.fromSecretPartialArn(this, `${name}secret${i + 1}`, secretsArns.get(s)));
           }
 
           delete environmentWithoutSecrets[s];
@@ -373,12 +375,10 @@ export abstract class ContainersStack extends cdk.Stack {
           secrets,
         });
 
-        if (build) {
-          containersInfo.push({
-            container,
-            repository,
-          });
-        }
+        containersInfo.push({
+          container,
+          repository,
+        });
 
         // TODO: should we use hostPort too? check network mode
         portMappings?.forEach(({ containerPort, protocol, hostPort }) => {

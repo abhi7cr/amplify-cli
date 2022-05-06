@@ -2,6 +2,7 @@ import { nspawn as spawn, getCLIPath, singleSelect, addCircleCITags } from '..';
 import { KEY_DOWN_ARROW } from '../utils';
 import { amplifyRegions } from '../configure';
 import { EOL } from 'os';
+import { v4 as uuid } from 'uuid';
 
 const defaultSettings = {
   name: EOL,
@@ -45,6 +46,8 @@ export function initJSProjectWithProfile(cwd: string, settings?: Partial<typeof 
     cliArgs.push('--permissions-boundary', s.permissionsBoundaryArn);
   }
 
+  if (s?.name?.length > 20) console.warn('Project names should not be longer than 20 characters. This may cause tests to break.');
+
   return new Promise((resolve, reject) => {
     const chain = spawn(getCLIPath(), cliArgs, { cwd, stripColors: true, env, disableCIDetection: s.disableCIDetection })
       .wait('Enter a name for the project')
@@ -77,7 +80,7 @@ export function initJSProjectWithProfile(cwd: string, settings?: Partial<typeof 
         .sendLine(s.profileName);
     }
 
-    chain.wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything').run((err: Error) => {
+    chain.wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/).run((err: Error) => {
       if (err) {
         reject(err);
       } else {
@@ -117,7 +120,7 @@ export function initAndroidProjectWithProfile(cwd: string, settings: Object): Pr
       .sendCarriageReturn()
       .wait('Please choose the profile you want to use')
       .sendLine(s.profileName)
-      .wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything')
+      .wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/)
       .run((err: Error) => {
         if (!err) {
           addCircleCITags(cwd);
@@ -128,6 +131,12 @@ export function initAndroidProjectWithProfile(cwd: string, settings: Object): Pr
         }
       });
   });
+}
+
+export function createRandomName() {
+  const length = 20;
+  const regExp = new RegExp('-', 'g');
+  return uuid().replace(regExp, '').substring(0, length);
 }
 
 export function initIosProjectWithProfile(cwd: string, settings: Object): Promise<void> {
@@ -158,7 +167,7 @@ export function initIosProjectWithProfile(cwd: string, settings: Object): Promis
       .sendCarriageReturn()
       .wait('Please choose the profile you want to use')
       .sendLine(s.profileName)
-      .wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything')
+      .wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/)
       .run((err: Error) => {
         if (!err) {
           addCircleCITags(cwd);
@@ -199,7 +208,7 @@ export function initFlutterProjectWithProfile(cwd: string, settings: Object): Pr
 
     singleSelect(chain, s.region, amplifyRegions);
 
-    chain.wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything').run((err: Error) => {
+    chain.wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/).run((err: Error) => {
       if (!err) {
         resolve();
       } else {
@@ -259,7 +268,7 @@ export function initProjectWithAccessKey(
 
     singleSelect(chain, s.region, amplifyRegions);
 
-    chain.wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything').run((err: Error) => {
+    chain.wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/).run((err: Error) => {
       if (!err) {
         resolve();
       } else {
@@ -298,7 +307,7 @@ export function initNewEnvWithAccessKey(cwd: string, s: { envName: string; acces
 
     singleSelect(chain, process.env.CLI_REGION, amplifyRegions);
 
-    chain.wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything').run((err: Error) => {
+    chain.wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/).run((err: Error) => {
       if (!err) {
         resolve();
       } else {
@@ -328,7 +337,37 @@ export function initNewEnvWithProfile(cwd: string, s: { envName: string }): Prom
       .sendCarriageReturn()
       .wait('Please choose the profile you want to use')
       .sendCarriageReturn()
-      .wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything')
+      .wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/)
+      .run((err: Error) => {
+        if (!err) {
+          resolve();
+        } else {
+          reject(err);
+        }
+      });
+  });
+}
+
+export function updatedInitNewEnvWithProfile(cwd: string, s: { envName: string }): Promise<void> {
+  addCircleCITags(cwd);
+
+  return new Promise((resolve, reject) => {
+    spawn(getCLIPath(), ['init'], {
+      cwd,
+      stripColors: true,
+    })
+      .wait('Do you want to use an existing environment?')
+      .sendConfirmNo()
+      .wait('Enter a name for the environment')
+      .sendLine(s.envName)
+      .wait('Choose your default editor:')
+      .sendCarriageReturn()
+      .wait('Using default provider  awscloudformation')
+      .wait('Select the authentication method you want to use:')
+      .sendCarriageReturn()
+      .wait('Please choose the profile you want to use')
+      .sendCarriageReturn()
+      .wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/)
       .run((err: Error) => {
         if (!err) {
           resolve();
@@ -362,7 +401,7 @@ export function amplifyInitSandbox(cwd: string, settings: {}): Promise<void> {
       .sendCarriageReturn()
       .wait('Please choose the profile you want to use')
       .sendLine(s.profileName)
-      .wait('Try "amplify add api" to create a backend API and then "amplify publish" to deploy everything')
+      .wait(/Try "amplify add api" to create a backend API and then "amplify (push|publish)" to deploy everything/)
       .run((err: Error) => {
         if (!err) {
           resolve();

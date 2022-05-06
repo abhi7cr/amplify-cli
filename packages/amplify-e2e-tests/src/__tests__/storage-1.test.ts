@@ -1,20 +1,32 @@
-import { initJSProjectWithProfile, initFlutterProjectWithProfile, deleteProject, amplifyPushAuth } from 'amplify-e2e-core';
-import { addAuthWithDefault, addAuthWithGroupsAndAdminAPI } from 'amplify-e2e-core';
+import { $TSAny } from 'amplify-cli-core';
 import {
-  addSimpleDDB,
-  addDDBWithTrigger,
-  updateDDBWithTrigger,
-  addSimpleDDBwithGSI,
-  updateSimpleDDBwithGSI,
+  addAuthWithDefault,
+  addAuthWithGroupsAndAdminAPI,
   addS3AndAuthWithAuthOnlyAccess,
-  addS3WithGuestAccess,
   addS3WithGroupAccess,
+  addS3WithGuestAccess,
   addS3WithTrigger,
-  updateS3AddTrigger,
+  amplifyPushAuth,
+  checkIfBucketExists,
+  createNewProjectDir,
+  deleteProject,
+  deleteProjectDir,
+  getProjectMeta,
+  initFlutterProjectWithProfile,
+  initJSProjectWithProfile,
+  updateS3AddTriggerNewFunctionWithFunctionExisting,
 } from 'amplify-e2e-core';
-import { createNewProjectDir, deleteProjectDir, getProjectMeta, getDDBTable, checkIfBucketExists } from 'amplify-e2e-core';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+
+function getServiceMeta(projectRoot: string, category: string, service: string): $TSAny {
+  const meta = getProjectMeta(projectRoot);
+  for (const storageResourceName of Object.keys(meta[category])) {
+    if (meta.storage[storageResourceName].service.toUpperCase() === service.toUpperCase()) {
+      return meta.storage[storageResourceName];
+    }
+  }
+}
 
 describe('amplify add/update storage(S3)', () => {
   let projRoot: string;
@@ -28,8 +40,8 @@ describe('amplify add/update storage(S3)', () => {
   });
 
   async function validate(projRoot) {
-    const meta = getProjectMeta(projRoot);
-    const { BucketName: bucketName, Region: region } = Object.keys(meta.storage).map(key => meta.storage[key])[0].output;
+    const serviceMeta = getServiceMeta(projRoot, 'storage', 'S3');
+    const { BucketName: bucketName, Region: region } = serviceMeta.output;
 
     expect(bucketName).toBeDefined();
     expect(region).toBeDefined();
@@ -79,10 +91,14 @@ describe('amplify add/update storage(S3)', () => {
   });
 
   it('init a project and add S3 bucket with user pool groups and then update S3 bucket to add trigger', async () => {
+    const settings = {
+      userGroup1: 'Admins',
+      userGroup2: 'Users',
+    };
     await initJSProjectWithProfile(projRoot, {});
     await addAuthWithGroupsAndAdminAPI(projRoot, {});
-    await addS3WithGroupAccess(projRoot, {});
-    await updateS3AddTrigger(projRoot, {});
+    await addS3WithGroupAccess(projRoot, settings);
+    await updateS3AddTriggerNewFunctionWithFunctionExisting(projRoot, settings);
     await amplifyPushAuth(projRoot);
     await validate(projRoot);
   });

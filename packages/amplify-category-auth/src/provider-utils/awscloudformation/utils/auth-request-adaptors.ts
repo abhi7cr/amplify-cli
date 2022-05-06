@@ -4,7 +4,6 @@ import {
   CognitoUserPoolSigninMethod,
   CognitoAdminQueries,
   CognitoMFAConfiguration,
-  CognitoPasswordRecoveryConfiguration,
   CognitoPasswordPolicy,
   CognitoPasswordConstraint,
   CognitoIdentityPoolConfiguration,
@@ -14,12 +13,12 @@ import {
   CognitoUserPoolConfiguration,
   CognitoUserPoolModification,
   CognitoIdentityPoolModification,
+  CognitoAutoVerifiedAttributesConfiguration,
 } from 'amplify-headless-interface';
 import { identityPoolProviders, userPoolProviders } from '../service-walkthroughs/auth-questions';
 import { isEmpty, merge } from 'lodash';
 import { authProviders as authProviderList } from '../assets/string-maps';
 import {
-  ServiceQuestionsResult,
   OAuthResult,
   SocialProviderResult,
   IdentityPoolResult,
@@ -27,24 +26,25 @@ import {
   AdminQueriesResult,
   MfaResult,
   PasswordPolicy,
-  PasswordRecoveryResult,
   UsernameAttributes,
   AliasAttributes,
   AttributeType,
-} from '../service-walkthrough-types';
+  ServiceQuestionHeadlessResult,
+  AutoVerifiedAttributesResult,
+} from '../service-walkthrough-types/cognito-user-input-types';
 import { pascalCase } from 'change-case';
 import { FeatureFlags } from 'amplify-cli-core';
 
 export type AddAuthRequestAdaptorFactory = (projectType: string) => AddAuthRequestAdaptor;
 
-export type AddAuthRequestAdaptor = (request: AddAuthRequest) => ServiceQuestionsResult;
+export type AddAuthRequestAdaptor = (request: AddAuthRequest) => ServiceQuestionHeadlessResult;
 /**
- * Factory function that returns a function to convert an AddAuthRequest into the existing ServiceQuestionsResult output format
+ * Factory function that returns a function to convert an AddAuthRequest into the existing CognitoConfiguation output format
  * @param projectType The project type (such as 'javascript', 'ios', 'android')
  */
 export const getAddAuthRequestAdaptor: AddAuthRequestAdaptorFactory =
   projectType =>
-  ({ serviceConfiguration: cognitoConfig, resourceName }): ServiceQuestionsResult => {
+  ({ serviceConfiguration: cognitoConfig, resourceName }): ServiceQuestionHeadlessResult => {
     const userPoolConfig = cognitoConfig.userPoolConfiguration;
     const identityPoolConfig = cognitoConfig.includeIdentityPool ? cognitoConfig.identityPoolConfiguration : undefined;
     const requiredAttributes = userPoolConfig.requiredSignupAttributes.map(att => att.toLowerCase());
@@ -59,7 +59,7 @@ export const getAddAuthRequestAdaptor: AddAuthRequestAdaptorFactory =
 
 export const getUpdateAuthRequestAdaptor =
   (projectType: string, requiredAttributes: string[]) =>
-  ({ serviceModification }: UpdateAuthRequest): ServiceQuestionsResult => {
+  ({ serviceModification }: UpdateAuthRequest): ServiceQuestionHeadlessResult => {
     const idPoolModification = serviceModification.includeIdentityPool ? serviceModification.identityPoolModification : undefined;
     return {
       serviceName: serviceModification.serviceName,
@@ -103,7 +103,7 @@ const mutableAttributeAdaptor = (
     userpoolClientWriteAttributes: (userPoolConfig.writeAttributes || []).map(att => att.toLowerCase()),
     ...adminQueriesMap(userPoolConfig.adminQueries),
     ...mfaMap(userPoolConfig.mfa),
-    ...passwordRecoveryMap(userPoolConfig.passwordRecovery),
+    ...autoVerifiedAttributesMap(userPoolConfig.autoVerifiedAttributes),
     ...passwordPolicyMap(userPoolConfig.passwordPolicy),
     ...mutableIdentityPoolMap(projectType, identityPoolConfig),
     ...oauthMap(userPoolConfig.oAuth, requiredAttributes),
@@ -234,25 +234,27 @@ const mfaMap = (mfaConfig: CognitoMFAConfiguration = { mode: 'OFF' }): MfaResult
   };
 };
 
-// converts password recovery config to existing format
-const passwordRecoveryMap = (pwRecoveryConfig?: CognitoPasswordRecoveryConfiguration): PasswordRecoveryResult => {
-  switch (pwRecoveryConfig?.deliveryMethod) {
-    case 'SMS':
-      return {
-        smsVerificationMessage: pwRecoveryConfig?.smsMessage,
-        autoVerifiedAttributes: ['phone_number'],
-      };
-    case 'EMAIL':
-      return {
-        emailVerificationMessage: pwRecoveryConfig?.emailMessage,
-        emailVerificationSubject: pwRecoveryConfig?.emailSubject,
-        autoVerifiedAttributes: ['email'],
-      };
-    default:
-      return {
-        autoVerifiedAttributes: [],
-      };
+const autoVerifiedAttributesMap = (autoVerifiedAttrConfig?: CognitoAutoVerifiedAttributesConfiguration): AutoVerifiedAttributesResult => {
+  const result: AutoVerifiedAttributesResult = {
+    autoVerifiedAttributes: [],
+  };
+  if (!Array.isArray(autoVerifiedAttrConfig)) {
+    return result;
   }
+
+  return autoVerifiedAttrConfig.reduce((result, config) => {
+    switch (config.type) {
+      case 'EMAIL':
+        result.autoVerifiedAttributes.push('email');
+        result.emailVerificationMessage = config.verificationMessage;
+        result.emailVerificationSubject = config.verificationSubject;
+        break;
+      case 'PHONE_NUMBER':
+        result.autoVerifiedAttributes.push('phone_number');
+        result.smsVerificationMessage = config.verificationMessage;
+    }
+    return result;
+  }, result);
 };
 
 const passwordConstraintMap: Record<CognitoPasswordConstraint, PasswordPolicy> = {

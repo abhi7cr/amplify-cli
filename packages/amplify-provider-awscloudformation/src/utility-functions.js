@@ -1,11 +1,13 @@
 const awsRegions = require('./aws-regions');
-const Lambda = require('./aws-utils/aws-lambda');
+const { Lambda } = require('./aws-utils/aws-lambda');
 const DynamoDB = require('./aws-utils/aws-dynamodb');
 const AppSync = require('./aws-utils/aws-appsync');
 const { Lex } = require('./aws-utils/aws-lex');
 const Polly = require('./aws-utils/aws-polly');
 const SageMaker = require('./aws-utils/aws-sagemaker');
-const { transformGraphQLSchema, getDirectiveDefinitions } = require('./transform-graphql-schema');
+const { transformGraphQLSchema } = require('./graphql-transformer');
+const { transformResourceWithOverrides } = require('./override-manager');
+const { getDirectiveDefinitions } = require('./graphql-transformer-factory/directive-definitions');
 const { updateStackForAPIMigration } = require('./push-resources');
 const SecretsManager = require('./aws-utils/aws-secretsmanager');
 const Route53 = require('./aws-utils/aws-route53');
@@ -60,6 +62,18 @@ module.exports = {
 
     return transformGraphQLSchema(context, optionsWithUpdateHandler);
   },
+
+  /**
+   * Utility function to build resource CFN with overrides
+   * Resources to build are passed with options
+   */
+  buildOverrides: async (context, options) => {
+    for (const resource of options.resourcesToBuild) {
+      await transformResourceWithOverrides(context, resource);
+    }
+    await transformResourceWithOverrides(context);
+  },
+
   newSecret: async (context, options) => {
     const { description, secret, name, version } = options;
     const client = await new SecretsManager(context);
@@ -258,8 +272,14 @@ module.exports = {
       throw err;
     }
   },
+  /**
+   * @deprecated Use getGraphQLAPIs instead
+   */
   getAppSyncAPIs: context => {
-    const log = logger('getAppSyncAPIs.appSyncModel.appSync.listGraphqlApis', { maxResults: 25 });
+    return this.getGraphQLAPIs(context);
+  },
+  getGraphQLAPIs: context => {
+    const log = logger('getGraphQLAPIs.appSyncModel.appSync.listGraphqlApis', { maxResults: 25 });
 
     return new AppSync(context)
       .then(result => {
@@ -351,12 +371,18 @@ module.exports = {
         throw ex;
       });
   },
+  /**
+   * @deprecated Use getGraphQLApiKeys instead
+   */
   getAppSyncApiKeys: (context, options) => {
+    return this.getGraphQLApiKeys(context, options);
+  },
+  getGraphQLApiKeys: (context, options) => {
     const awsOptions = {};
     if (options.region) {
       awsOptions.region = options.region;
     }
-    const log = logger('getAppSyncApiKeys.appSync.listApiKeys', [
+    const log = logger('getGraphQLApiKeys.appSync.listApiKeys', [
       {
         apiId: options.apiId,
       },

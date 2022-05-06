@@ -1,73 +1,83 @@
 import { AccessType, DataProvider, ResourceParameters } from "../service-utils/resourceParams";
-import { ServiceName, choosePricingPlan, apiDocs } from "../service-utils/constants";
-import { PricingPlan } from "../service-utils/resourceParams";
-import { $TSContext, open } from "amplify-cli-core";
-import { printer, prompter } from 'amplify-prompts';
+import { apiDocs, ServiceName } from "../service-utils/constants";
+import { prompter, printer, byValue, byValues } from 'amplify-prompts';
+import { $TSContext } from "amplify-cli-core";
 
-export async function resourceAccessWalkthrough<T extends ResourceParameters>(
+export async function resourceAccessWalkthrough<T extends ResourceParameters & { groupPermissions: string[] }>(
+    context: $TSContext,
     parameters: Partial<T>,
     service: ServiceName
 ): Promise<Partial<T>> {
-    const accessChoices = [
-        { name: 'Authorized users only', value: AccessType.AuthorizedUsers },
-        { name: 'Authorized and Guest users', value: AccessType.AuthorizedAndGuestUsers }
-    ];
-    let accessTypeDefaultIndex = 0;
-    if (parameters.accessType === AccessType.AuthorizedAndGuestUsers) {
-        accessTypeDefaultIndex = 1;
+    let permissionSelected = 'Auth/Guest Users';
+    const LearnMore = 'Learn more';
+    const userPoolGroupList = context.amplify.getUserPoolGroupList();
+
+    if (userPoolGroupList.length > 0) {
+        let defaultPermission = 'Auth/Guest Users';
+        if (parameters.accessType === AccessType.CognitoGroups) {
+            defaultPermission = 'Individual Groups'
+        }
+        else if (parameters.groupPermissions &&
+            parameters.groupPermissions.length > 0 &&
+            parameters.accessType !== AccessType.CognitoGroups) {
+            defaultPermission = 'Both'
+        }
+
+        do {
+            if (permissionSelected === LearnMore) {
+                printer.blankLine();
+                printer.info(
+                    "You can restrict access using CRUD policies for Authenticated Users, Guest Users, or on individual Groups in a User Pool. If a user logs into your application and is not a member of any group they will have the permissions set for “Authenticated Users”. However if they belong to a group they will ONLY get the policy associated with that specific group. They will NOT get the union of 'Authenticated Users' and that group's policy.",
+                );
+                printer.blankLine();
+            }
+            permissionSelected = await prompter.pick<'one', string>(
+                `Restrict access by?`,
+                ['Auth/Guest Users', 'Individual Groups', 'Both', LearnMore],
+                { initial: byValue(defaultPermission) }
+            );
+        } while (permissionSelected === 'Learn more');
     }
 
-    parameters.accessType = await prompter.pick<'one', string>(
-        `Who can access this ${getServiceFriendlyName(service)}?`,
-        accessChoices,
-        { initial: accessTypeDefaultIndex }
-    ) as AccessType;
-    return parameters;
-};
+    if (permissionSelected === 'Both' || permissionSelected === 'Auth/Guest Users') {
+        const accessChoices = [
+            { name: 'Authorized users only', value: AccessType.AuthorizedUsers },
+            { name: 'Authorized and Guest users', value: AccessType.AuthorizedAndGuestUsers }
+        ];
+        let accessTypeDefaultIndex = 0;
+        if (parameters.accessType === AccessType.AuthorizedAndGuestUsers) {
+            accessTypeDefaultIndex = 1;
+        }
 
-export async function pricingPlanWalkthrough<T extends ResourceParameters>(
-    context: $TSContext,
-    parameters: Partial<T>
-): Promise<Partial<T>> {
-    let pricingPlan: PricingPlan = parameters.pricingPlan ? parameters.pricingPlan : PricingPlan.RequestBasedUsage;
+        parameters.accessType = await prompter.pick<'one', string>(
+            `Who can access this ${getServiceFriendlyName(service)}?`,
+            accessChoices,
+            { initial: accessTypeDefaultIndex }
+        ) as AccessType;
 
-    printer.info(choosePricingPlan);
+        if (permissionSelected === 'Auth/Guest Users') {
+            parameters.groupPermissions = [];
+        }
+    }
 
-    const pricingPlanBusinessTypeChoices = [
-        { name: "No, I do not track devices or I only need to track consumers' personal devices", value: PricingPlan.RequestBasedUsage },
-        { name: 'Yes, I track commercial assets (For example, any mobile object that is tracked by a company in support of its business)', value: 'Unknown' },
-        { name: 'Learn More', value: 'LearnMore'}
-    ];
+    if (permissionSelected === 'Both' || permissionSelected === 'Individual Groups') {
+        let defaultSelectedGroups: string[] = [];
+        if (parameters.groupPermissions) {
+            defaultSelectedGroups = parameters.groupPermissions;
+        }
 
-    const pricingPlanChoiceDefaultIndex = pricingPlan === PricingPlan.RequestBasedUsage ? 0 : 1;
-
-    let pricingPlanBusinessTypeChoice = await prompter.pick<'one', string>(
-        'Are you tracking commercial assets for your business in your app?',
-        pricingPlanBusinessTypeChoices,
-        { initial: pricingPlanChoiceDefaultIndex }
-    );
-    while (pricingPlanBusinessTypeChoice === 'LearnMore') {
-        open(apiDocs.pricingPlan, { wait: false });
-        pricingPlanBusinessTypeChoice = await prompter.pick<'one', string>(
-            'Are you tracking commercial assets for your business in your app?',
-            pricingPlanBusinessTypeChoices,
-            { initial: pricingPlanChoiceDefaultIndex }
+        const selectedUserPoolGroups = await prompter.pick<'many', string>(
+            'Select one or more cognito groups to give access:',
+            userPoolGroupList,
+            { returnSize: 'many', initial: byValues(defaultSelectedGroups), pickAtLeast: 1 }
         );
-    }
 
-    if (pricingPlanBusinessTypeChoice === PricingPlan.RequestBasedUsage) {
-        pricingPlan = PricingPlan.RequestBasedUsage;
-    }
-    else {
-        const pricingPlanRoutingChoice = await prompter.yesOrNo(
-            'Does your app provide routing or route optimization for commercial assets?',
-            pricingPlan === PricingPlan.MobileAssetManagement ? true : false
-        );
-        pricingPlan = pricingPlanRoutingChoice ? PricingPlan.MobileAssetManagement : PricingPlan.MobileAssetTracking;
-    }
-    parameters.pricingPlan = pricingPlan;
+        parameters.groupPermissions = selectedUserPoolGroups;
 
-    printer.info(`Successfully set ${pricingPlan} pricing plan for your Geo resources.`);
+        if (permissionSelected === 'Individual Groups') {
+            parameters.accessType = AccessType.CognitoGroups;
+        }
+    }
     return parameters;
 };
 
@@ -75,12 +85,19 @@ export async function dataProviderWalkthrough<T extends ResourceParameters>(
     parameters: Partial<T>,
     service: ServiceName
 ): Promise<Partial<T>> {
+    let dataProviderPrompt = `Specify the data provider of geospatial data for this ${getServiceFriendlyName(service)}:`;
+    if (service === ServiceName.GeofenceCollection) {
+        dataProviderPrompt = `Specify the data provider for ${getServiceFriendlyName(service)}. This will be only used to calculate billing.`;
+    }
     const dataProviderInput = await prompter.pick<'one', string>(
-        `Specify the data provider of geospatial data for this ${getServiceFriendlyName(service)}:`,
+        dataProviderPrompt,
         Object.values(DataProvider),
-        { initial: (parameters.dataProvider === DataProvider.Here) ? 1 : 0 }
+        { initial: (parameters.dataProvider === DataProvider.Esri) ? 0 : 1 }
     );
     const provider = (Object.keys(DataProvider).find(key => DataProvider[key as keyof typeof DataProvider] === dataProviderInput)) as DataProvider;
+    if (provider === DataProvider.Esri) {
+        printer.warn(`${DataProvider.Esri} does not support tracking and routing commercial assets. Refer to ${apiDocs.pricingPlan} `);
+    }
     parameters.dataProvider = provider;
     return parameters;
 };
@@ -89,6 +106,8 @@ export const getServiceFriendlyName = (service: ServiceName): string => {
     switch(service) {
         case ServiceName.PlaceIndex:
             return 'search index';
+        case ServiceName.GeofenceCollection:
+            return 'geofence collection';
         default:
             return service;
     }

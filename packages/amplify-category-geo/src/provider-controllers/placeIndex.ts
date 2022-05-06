@@ -35,20 +35,12 @@ export const updatePlaceIndexResource = async (
   // populate the parameters for the resource
   await updatePlaceIndexWalkthrough(context, placeIndexParams);
 
-  if (placeIndexParams.name && placeIndexParams.isDefault !== undefined && placeIndexParams.accessType) {
-    modifyPlaceIndexResource(context, {
-      accessType: placeIndexParams.accessType,
-      name: placeIndexParams.name,
-      isDefault: placeIndexParams.isDefault
-    });
-  }
-  else {
-    throw insufficientInfoForUpdateError(ServiceName.PlaceIndex);
-  }
+  const completeParameters: PlaceIndexParameters = convertToCompletePlaceIndexParams(placeIndexParams);
+  await modifyPlaceIndexResource(context, completeParameters);
 
   printer.success(`Successfully updated resource ${placeIndexParams.name} locally.`);
   printNextStepsSuccessMessage(context);
-  return placeIndexParams.name;
+  return completeParameters.name;
 };
 
 export const removePlaceIndexResource = async (
@@ -60,24 +52,13 @@ export const removePlaceIndexResource = async (
 
   const resourceParameters = await getCurrentPlaceIndexParameters(resourceToRemove);
 
-  try {
-    await amplify.removeResource(context, category, resourceToRemove)
-    .then(async (resource: { service: string; resourceName: string }) => {
-      if (resource?.service === ServiceName.PlaceIndex && resourceParameters.isDefault) {
-        // choose another default if removing a default place index
-        await updateDefaultPlaceIndexWalkthrough(context, resource.resourceName);
-      }
-    });
-  } catch (err: $TSAny) {
-    if (err.stack) {
-      printer.error(err.stack);
-      printer.error(err.message);
-      printer.error(`An error occurred when removing the geo resource ${resourceToRemove}`);
-    }
-
-    context.usageData.emitError(err);
-    process.exitCode = 1;
+  const resource = await amplify.removeResource(context, category, resourceToRemove);
+  if (resource?.service === ServiceName.PlaceIndex && resourceParameters.isDefault) {
+    // choose another default if removing a default place index
+    await updateDefaultPlaceIndexWalkthrough(context, resource?.resourceName);
   }
+
+  context.amplify.updateBackendConfigAfterResourceRemove(category, resourceToRemove);
 
   printNextStepsSuccessMessage(context);
   return resourceToRemove;

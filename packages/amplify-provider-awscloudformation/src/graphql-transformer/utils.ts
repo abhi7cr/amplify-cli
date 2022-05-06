@@ -2,110 +2,123 @@ import fs from 'fs-extra';
 import * as path from 'path';
 import { TransformerProjectConfig, DeploymentResources } from '@aws-amplify/graphql-transformer-core';
 import rimraf from 'rimraf';
-import { JSONUtilities } from 'amplify-cli-core';
-import { CloudFormation, Template, Fn } from 'cloudform';
-import { Diff, diff as getDiffs } from 'deep-diff';
+import { ProviderName as providerName } from '../constants';
+import { $TSContext, AmplifyCategories, JSONUtilities, pathManager, stateManager } from 'amplify-cli-core';
+import { CloudFormation, Fn } from 'cloudform';
 import { ResourceConstants } from 'graphql-transformer-common';
+import { pullAllBy, find } from 'lodash';
+import { isAmplifyAdminApp } from '../utils/admin-helpers';
+import { printer } from 'amplify-prompts';
+import { prePushCfnTemplateModifier } from '../pre-push-cfn-processor/pre-push-cfn-modifier';
 
-const ROOT_STACK_FILE_NAME = 'cloudformation-template.json';
 const PARAMETERS_FILE_NAME = 'parameters.json';
-export interface DiffableProject {
-  stacks: {
-    [stackName: string]: Template;
-  };
-  root: Template;
+const CUSTOM_ROLES_FILE_NAME = 'custom-roles.json';
+const AMPLIFY_ADMIN_ROLE = '_Full-access/CognitoIdentityCredentials';
+const AMPLIFY_MANAGE_ROLE = '_Manage-only/CognitoIdentityCredentials';
+
+interface CustomRolesConfig {
+  adminRoleNames?: Array<string>;
 }
 
-export type DiffChanges<T> = Array<Diff<DiffableProject, DiffableProject>>;
-
-export interface GQLDiff {
-  diff: DiffChanges<DiffableProject>;
-  next: DiffableProject;
-  current: DiffableProject;
-}
-
-export const getGQLDiff = (currentBackendDir: string, cloudBackendDir: string): GQLDiff => {
-  const currentBuildDir = path.join(currentBackendDir, 'build');
-  const cloudBuildDir = path.join(cloudBackendDir, 'build');
-  if (fs.existsSync(cloudBuildDir) && fs.existsSync(currentBuildDir)) {
-    const current = loadDiffableProject(cloudBuildDir, ROOT_STACK_FILE_NAME);
-    const next = loadDiffableProject(currentBuildDir, ROOT_STACK_FILE_NAME);
-    return { current, next, diff: getDiffs(current, next) };
-  }
-  return null;
+export const getIdentityPoolId = async (ctx: $TSContext): Promise<string | undefined> => {
+  const { allResources, resourcesToBeDeleted } = await ctx.amplify.getResourceStatus('auth');
+  const authResources = pullAllBy(allResources, resourcesToBeDeleted, 'resourceName');
+  const authResource = find(authResources, { service: 'Cognito', providerPlugin: providerName }) as any;
+  return authResource?.output?.IdentityPoolId;
 };
 
-export const getGqlUpdatedResource = (resources: any[]) => {
-  if (resources.length > 0) {
-    const resource = resources[0];
-    if (
-      resource.service === 'AppSync' &&
-      resource.providerMetadata &&
-      resource.providerMetadata.logicalId &&
-      resource.providerPlugin === 'awscloudformation'
-    ) {
-      return resource;
+export const getAdminRoles = async (ctx: $TSContext, apiResourceName: string | undefined): Promise<Array<string>> => {
+  let currentEnv;
+  const adminRoles = new Array<string>();
+
+  try {
+    currentEnv = ctx.amplify.getEnvInfo().envName;
+  } catch (err) {
+    // When there is no environment info, return [] - This is required for sandbox pull
+    return [];
+  }
+
+  //admin ui roles
+  try {
+    const amplifyMeta = stateManager.getMeta();
+    const appId = amplifyMeta?.providers?.[providerName]?.AmplifyAppId;
+    const res = await isAmplifyAdminApp(appId);
+    if (res.userPoolID) {
+      adminRoles.push(`${res.userPoolID}${AMPLIFY_ADMIN_ROLE}`, `${res.userPoolID}${AMPLIFY_MANAGE_ROLE}`);
+    }
+  } catch (err) {
+    // no need to error if not admin ui app
+  }
+
+  // additonal admin role checks
+  if (apiResourceName) {
+    // lambda functions which have access to the api
+    const { allResources, resourcesToBeDeleted } = await ctx.amplify.getResourceStatus('function');
+    const resources = pullAllBy(allResources, resourcesToBeDeleted, 'resourceName')
+      .filter((r: any) => r.dependsOn?.some((d: any) => d?.resourceName === apiResourceName))
+      .map((r: any) => `${r.resourceName}-${currentEnv}`);
+    adminRoles.push(...resources);
+
+    // check for custom iam admin roles
+    const customRoleFile = path.join(
+      pathManager.getResourceDirectoryPath(undefined, AmplifyCategories.API, apiResourceName),
+      CUSTOM_ROLES_FILE_NAME,
+    );
+    if (fs.existsSync(customRoleFile)) {
+      const customRoleConfig = JSONUtilities.readJson<CustomRolesConfig>(customRoleFile);
+      if (customRoleConfig && customRoleConfig.adminRoleNames) {
+        adminRoles.push(...customRoleConfig.adminRoleNames);
+      }
     }
   }
-  return null;
+  return adminRoles;
 };
-
-export function loadDiffableProject(path: string, rootStackName: string): DiffableProject {
-  const project = readFromPath(path);
-  const currentStacks = project.stacks || {};
-  const diffableProject: DiffableProject = {
-    stacks: {},
-    root: {},
-  };
-  for (const key of Object.keys(currentStacks)) {
-    diffableProject.stacks[key] = JSONUtilities.parse(project.stacks[key]);
-  }
-  if (project[rootStackName]) {
-    diffableProject.root = JSONUtilities.parse(project[rootStackName]);
-  }
-  return diffableProject;
-}
-
-export function readFromPath(directory: string): any {
-  const pathExists = fs.pathExistsSync(directory);
-  if (!pathExists) {
-    return;
-  }
-  const dirStats = fs.lstatSync(directory);
-  if (!dirStats.isDirectory()) {
-    const buf = fs.readFileSync(directory);
-    return buf.toString();
-  }
-  const files = fs.readdirSync(directory);
-  const accum = {};
-  for (const fileName of files) {
-    const fullPath = path.join(directory, fileName);
-    const value = readFromPath(fullPath);
-    accum[fileName] = value;
-  }
-  return accum;
-}
 
 export function mergeUserConfigWithTransformOutput(
   userConfig: TransformerProjectConfig,
   transformOutput: DeploymentResources,
+  opts?: any,
 ): DeploymentResources {
   const userFunctions = userConfig.functions || {};
   const userResolvers = userConfig.resolvers || {};
   const userPipelineFunctions = userConfig.pipelineFunctions || {};
   const functions = transformOutput.functions;
+  const resolvers = transformOutput.resolvers;
   const pipelineFunctions = transformOutput.pipelineFunctions;
 
-  for (const userFunction of Object.keys(userFunctions)) functions[userFunction] = userFunctions[userFunction];
-  for (const userPipelineFunction of Object.keys(userPipelineFunctions))
-    pipelineFunctions[userPipelineFunction] = userPipelineFunctions[userPipelineFunction];
-  for (const userResolver of Object.keys(userResolvers)) pipelineFunctions[userResolver] = userResolvers[userResolver];
+  if (!opts?.disableFunctionOverrides) {
+    for (const userFunction of Object.keys(userFunctions)) {
+      functions[userFunction] = userFunctions[userFunction];
+    }
+  }
+
+  if (!opts?.disablePipelineFunctionOverrides) {
+    const pipelineFunctionKeys = Object.keys(userPipelineFunctions);
+
+    if (pipelineFunctionKeys.length > 0) {
+      printer.warn(
+        ' You are using the "pipelineFunctions" directory for overridden and custom resolvers. ' +
+          'Please use the "resolvers" directory as "pipelineFunctions" will be deprecated.\n',
+      );
+    }
+
+    for (const userPipelineFunction of pipelineFunctionKeys) resolvers[userPipelineFunction] = userPipelineFunctions[userPipelineFunction];
+  }
+
+  if (!opts?.disableResolverOverrides) {
+    for (const userResolver of Object.keys(userResolvers)) {
+      if (userResolver !== 'README.md') {
+        resolvers[userResolver] = userResolvers[userResolver].toString();
+      }
+    }
+  }
 
   const stacks = overrideUserDefinedStacks(userConfig, transformOutput);
 
   return {
     ...transformOutput,
     functions,
+    resolvers,
     pipelineFunctions,
     stacks,
   };
@@ -194,9 +207,9 @@ export async function writeDeploymentToDisk(
   buildParameters: Object,
   minify = false,
 ) {
-  // Delete the last deployments resources.
-  rimraf.sync(directory);
   fs.ensureDirSync(directory);
+  // Delete the last deployments resources except for tsconfig if present
+  emptyBuildDirPreserveTsconfig(directory);
 
   // Write the schema to disk
   const schema = deployment.schema;
@@ -233,12 +246,12 @@ export async function writeDeploymentToDisk(
     const fullFileName = fileNameParts.join('.');
     throwIfNotJSONExt(fullFileName);
     const fullStackPath = path.normalize(stackRootPath + '/' + fullFileName);
-    let stackString: any = deployment.stacks[stackFileName];
-    stackString =
-      typeof stackString === 'string'
-        ? deployment.stacks[stackFileName]
-        : JSONUtilities.stringify(deployment.stacks[stackFileName], { minify });
-    fs.writeFileSync(fullStackPath, stackString);
+    let stackContent = deployment.stacks[stackFileName];
+    if (typeof stackContent === 'string') {
+      stackContent = JSON.parse(stackContent);
+    }
+    await prePushCfnTemplateModifier(stackContent);
+    fs.writeFileSync(fullStackPath, JSONUtilities.stringify(stackContent, { minify }));
   }
 
   // Write any functions to disk
@@ -268,10 +281,6 @@ function initStacksAndResolversDirectories(directory: string) {
   if (!fs.existsSync(resolverRootPath)) {
     fs.mkdirSync(resolverRootPath);
   }
-  const pipelineFunctionRootPath = pipelineFunctionDirectoryPath(directory);
-  if (!fs.existsSync(pipelineFunctionRootPath)) {
-    fs.mkdirSync(pipelineFunctionRootPath);
-  }
   const stackRootPath = stacksDirectoryPath(directory);
   if (!fs.existsSync(stackRootPath)) {
     fs.mkdirSync(stackRootPath);
@@ -290,7 +299,7 @@ function stacksDirectoryPath(rootPath: string) {
   return path.normalize(rootPath + `/stacks`);
 }
 
-export function throwIfNotJSONExt(stackFile: string) {
+function throwIfNotJSONExt(stackFile: string) {
   const extension = path.extname(stackFile);
   if (extension === '.yaml' || extension === '.yml') {
     throw new Error(`Yaml is not yet supported. Please convert the CloudFormation stack ${stackFile} to json.`);
@@ -299,3 +308,15 @@ export function throwIfNotJSONExt(stackFile: string) {
     throw new Error(`Invalid extension ${extension} for stack ${stackFile}`);
   }
 }
+
+const emptyBuildDirPreserveTsconfig = (directory: string) => {
+  const files = fs.readdirSync(directory);
+  files.forEach(file => {
+    const fileDir = path.join(directory, file);
+    if (fs.lstatSync(fileDir).isDirectory()) {
+      rimraf.sync(fileDir);
+    } else if (!file.endsWith('tsconfig.resource.json')) {
+      fs.unlinkSync(fileDir);
+    }
+  });
+};

@@ -1,25 +1,39 @@
+/* eslint-disable no-restricted-syntax */
+/* eslint-disable max-len */
+/* eslint-disable spellcheck/spell-checker */
+/* eslint-disable import/no-cycle */
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import _ from 'lodash';
 import { PathConstants, pathManager } from './pathManager';
-import { $TSMeta, $TSTeamProviderInfo, $TSAny, DeploymentSecrets, HooksConfig } from '..';
+import {
+  $TSMeta, $TSTeamProviderInfo, $TSAny, DeploymentSecrets, HooksConfig, $TSObject,
+} from '..';
 import { JSONUtilities } from '../jsonUtilities';
 import { SecretFileMode } from '../cliConstants';
 import { HydrateTags, ReadTags, Tag } from '../tags';
 import { CustomIAMPolicies } from '../customPoliciesUtils';
 
-
+/**
+ * Options available in config files
+ */
 export type GetOptions<T> = {
   throwIfNotExist?: boolean;
   preserveComments?: boolean;
   default?: T;
 };
 
+/**
+ * Resource entry stored in configuration files.
+ */
 export type ResourceEntry = {
   resourceName: string;
-  resource: Record<string, object>;
+  resource: Record<string, unknown>;
 };
 
+/**
+ * Amplify configuration state manager
+ */
 export class StateManager {
   metaFileExists = (projectPath?: string): boolean => this.doesExist(pathManager.getAmplifyMetaFilePath, projectPath);
 
@@ -39,7 +53,7 @@ export class StateManager {
 
   setDeploymentSecrets = (deploymentSecrets: DeploymentSecrets): void => {
     const path = pathManager.getDeploymentSecrets();
-    JSONUtilities.writeJson(path, deploymentSecrets, { mode: SecretFileMode }); //set deployment secret file permissions to -rw-------
+    JSONUtilities.writeJson(path, deploymentSecrets, { mode: SecretFileMode }); // set deployment secret file permissions to -rw-------
   };
 
   getCurrentMeta = (projectPath?: string, options?: GetOptions<$TSMeta>): $TSMeta => {
@@ -54,13 +68,11 @@ export class StateManager {
     return data;
   };
 
-  getDeploymentSecrets = (): DeploymentSecrets => {
-    return (
-      JSONUtilities.readJson<DeploymentSecrets>(pathManager.getDeploymentSecrets(), {
-        throwIfNotExist: false,
-      }) || { appSecrets: [] }
-    );
-  };
+  getDeploymentSecrets = (): DeploymentSecrets => (
+    JSONUtilities.readJson<DeploymentSecrets>(pathManager.getDeploymentSecrets(), {
+      throwIfNotExist: false,
+    }) || { appSecrets: [] }
+  );
 
   getProjectTags = (projectPath?: string): Tag[] => ReadTags(pathManager.getTagFilePath(projectPath));
 
@@ -78,14 +90,12 @@ export class StateManager {
     return this.getData<$TSTeamProviderInfo>(filePath, mergedOptions);
   };
 
-  getCustomPolicies = (categoryName: string, resourceName: string): CustomIAMPolicies | undefined => {
+  getCustomPolicies = (categoryName: string, resourceName: string): CustomIAMPolicies => {
     const filePath = pathManager.getCustomPoliciesPath(categoryName, resourceName);
-    try{
-      return JSONUtilities.readJson<CustomIAMPolicies>(filePath);
-    } catch(err) {
-      return undefined;
-    }
+    return JSONUtilities.readJson<CustomIAMPolicies>(filePath, { throwIfNotExist: false }) || [];
   };
+
+  getCurrentEnvName = (projectPath?: string): string | undefined => this.getLocalEnvInfo(projectPath, { throwIfNotExist: false })?.envName;
 
   localEnvInfoExists = (projectPath?: string): boolean => this.doesExist(pathManager.getLocalEnvFilePath, projectPath);
 
@@ -135,6 +145,20 @@ export class StateManager {
     return this.getData<$TSAny>(filePath, mergedOptions);
   };
 
+  getProjectName = (): string => {
+    const { projectName } = this.getProjectConfig();
+    return projectName;
+  }
+
+  getAppID = () : string => {
+    const meta = stateManager.getMeta(undefined, { throwIfNotExist: false });
+    const appId = meta?.providers?.awscloudformation?.AmplifyAppId;
+    if (!appId) {
+      throw new Error('Could not find an Amplify AppId in the amplfiy-meta.json file. Make sure your project is initialized in the cloud.');
+    }
+    return appId;
+  }
+
   getResourceParametersJson = (
     projectPath: string | undefined,
     category: string,
@@ -142,6 +166,21 @@ export class StateManager {
     options?: GetOptions<$TSAny>,
   ): $TSAny => {
     const filePath = pathManager.getResourceParametersFilePath(projectPath, category, resourceName);
+    const mergedOptions = {
+      throwIfNotExist: true,
+      ...options,
+    };
+
+    return this.getData<$TSAny>(filePath, mergedOptions);
+  };
+
+  getResourceInputsJson = (
+    projectPath: string | undefined,
+    category: string,
+    resourceName: string,
+    options?: GetOptions<$TSAny>,
+  ): $TSAny => {
+    const filePath = pathManager.getResourceInputsJsonFilePath(projectPath, category, resourceName);
     const mergedOptions = {
       throwIfNotExist: true,
       ...options,
@@ -171,8 +210,7 @@ export class StateManager {
       default: {},
       ...options,
     };
-    const adminConfig =
-      JSONUtilities.readJson<$TSAny>(pathManager.getAmplifyAdminConfigFilePath(), { throwIfNotExist: false }) ?? mergedOptions.default;
+    const adminConfig = JSONUtilities.readJson<$TSAny>(pathManager.getAmplifyAdminConfigFilePath(), { throwIfNotExist: false }) ?? mergedOptions.default;
 
     return adminConfig[appId];
   };
@@ -201,11 +239,11 @@ export class StateManager {
     JSONUtilities.writeJson(filePath, localAWSInfo);
   };
 
-  getHydratedTags = (projectPath?: string | undefined): Tag[] => {
+  getHydratedTags = (projectPath?: string | undefined, skipProjEnv = false): Tag[] => {
     const tags = this.getProjectTags(projectPath);
     const { projectName } = this.getProjectConfig(projectPath);
     const { envName } = this.getLocalEnvInfo(projectPath);
-    return HydrateTags(tags, { projectName, envName });
+    return HydrateTags(tags, { projectName, envName }, skipProjEnv);
   };
 
   isTagFilePresent = (projectPath?: string | undefined): boolean => {
@@ -248,8 +286,7 @@ export class StateManager {
     JSONUtilities.writeJson(filePath, meta);
   };
 
-  getHooksConfigJson = (projectPath?: string): HooksConfig =>
-    this.getData<HooksConfig>(pathManager.getHooksConfigFilePath(projectPath), { throwIfNotExist: false }) ?? {};
+  getHooksConfigJson = (projectPath?: string): HooksConfig => this.getData<HooksConfig>(pathManager.getHooksConfigFilePath(projectPath), { throwIfNotExist: false }) ?? {};
 
   setSampleHooksDir = (projectPath: string | undefined, sourceDirPath: string): void => {
     const targetDirPath = pathManager.getHooksDirPath(projectPath);
@@ -272,6 +309,20 @@ export class StateManager {
     const filePath = pathManager.getResourceParametersFilePath(projectPath, category, resourceName);
 
     JSONUtilities.writeJson(filePath, parameters);
+  };
+
+  setResourceInputsJson = (projectPath: string | undefined, category: string, resourceName: string, inputs: $TSObject): void => {
+    const filePath = pathManager.getResourceInputsJsonFilePath(projectPath, category, resourceName);
+
+    JSONUtilities.writeJson(filePath, inputs);
+  };
+
+  resourceInputsJsonExists = (projectPath: string | undefined, category: string, resourceName: string): boolean => {
+    try {
+      return fs.existsSync(pathManager.getResourceInputsJsonFilePath(projectPath, category, resourceName));
+    } catch (e) {
+      return false;
+    }
   };
 
   cliJSONFileExists = (projectPath: string, env?: string): boolean => {
@@ -305,7 +356,7 @@ export class StateManager {
     categoryName: string,
     serviceName: string,
     resourceName?: string | undefined,
-    throwIfNotExist: boolean = true,
+    throwIfNotExist = true,
   ): ResourceEntry | null => {
     const resources = this.filterResourcesFromMeta(amplifyMeta, categoryName, serviceName, resourceName);
 
@@ -359,14 +410,14 @@ export class StateManager {
   };
 
   private doesExist = (filePathGetter: (projPath?: string) => string, projectPath?: string): boolean => {
-    let path;
+    let chkPath;
     try {
       // getting the file path can fail if we are not in a valid project
-      path = filePathGetter(projectPath);
+      chkPath = filePathGetter(projectPath);
     } catch (e) {
       return false;
     }
-    return fs.existsSync(path);
+    return fs.existsSync(chkPath);
   };
 
   private getData = <T>(filePath: string, options?: GetOptions<T>): T | undefined => {
@@ -379,5 +430,3 @@ export class StateManager {
 }
 
 export const stateManager = new StateManager();
-
-

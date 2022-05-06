@@ -1,16 +1,28 @@
-import { mergeUserConfigWithTransformOutput } from '../../graphql-transformer/utils';
+import { mergeUserConfigWithTransformOutput, writeDeploymentToDisk } from '../../graphql-transformer/utils';
+import { prePushCfnTemplateModifier } from '../../pre-push-cfn-processor/pre-push-cfn-modifier';
 import { TransformerProjectConfig, DeploymentResources } from '@aws-amplify/graphql-transformer-core';
+import * as fs from 'fs-extra';
+import * as path from 'path';
+
+jest.mock('fs-extra');
+jest.mock('../../pre-push-cfn-processor/pre-push-cfn-modifier');
+
+const fs_mock = fs as jest.Mocked<typeof fs>;
+const prePushCfnTemplateModifier_mock = prePushCfnTemplateModifier as jest.MockedFunction<typeof prePushCfnTemplateModifier>;
+
+fs_mock.readdirSync.mockReturnValue([]);
 
 describe('graphql transformer utils', () => {
   let userConfig: TransformerProjectConfig;
   let transformerOutput: DeploymentResources;
 
-  beforeAll(() => {
+  beforeEach(() => {
     transformerOutput = {
-      resolvers: {},
-      pipelineFunctions: {
+      userOverriddenSlots: [],
+      resolvers: {
         'Query.listTodos.req.vtl': '## [Start] List Request. **\n' + '#set( $limit = $util.defaultIfNull($context.args.limit, 100) )\n',
       },
+      pipelineFunctions: {},
       functions: {},
       schema: '',
       stackMapping: {},
@@ -20,6 +32,30 @@ describe('graphql transformer utils', () => {
         Resources: {},
       },
     } as DeploymentResources;
+  });
+
+  describe('writeDeploymentToDisk', () => {
+    it('executes the CFN pre-push processor on nested api stacks before writing to disk', async () => {
+      transformerOutput.stacks['TestStack'] = { Resources: { TestResource: { Type: 'testtest' } } };
+      transformerOutput.resolvers = {};
+      let hasTransformedTemplate = false;
+      let hasWrittenTransformedTemplate = false;
+      prePushCfnTemplateModifier_mock.mockImplementation(async () => {
+        hasTransformedTemplate = true;
+      });
+      fs_mock.writeFileSync.mockImplementation(filepath => {
+        if (typeof filepath === 'string' && filepath.includes(`${path.sep}stacks${path.sep}`)) {
+          if (hasTransformedTemplate) {
+            hasWrittenTransformedTemplate = true;
+          } else {
+            throw new Error('prePushCfnTemplateModifier was not applied to template before writing to disk');
+          }
+        }
+      });
+
+      await writeDeploymentToDisk(transformerOutput, path.join('test', 'deployment'), undefined, {});
+      expect(hasWrittenTransformedTemplate).toBe(true);
+    });
   });
 
   describe('mergeUserConfigWithTransformOutput', () => {
@@ -61,7 +97,7 @@ describe('graphql transformer utils', () => {
       it('merges the custom resolver with transformer output', () => {
         const output = mergeUserConfigWithTransformOutput(userConfig, transformerOutput);
 
-        expect(output.pipelineFunctions['Query.listTodos.req.vtl']).toEqual('$util.unauthorized\n');
+        expect(output.resolvers['Query.listTodos.req.vtl']).toEqual('$util.unauthorized\n');
       });
     });
 
@@ -80,9 +116,9 @@ describe('graphql transformer utils', () => {
       });
 
       it('merges custom pipeline function with transformer output', () => {
-        const { pipelineFunctions } = mergeUserConfigWithTransformOutput(userConfig, transformerOutput);
+        const { resolvers } = mergeUserConfigWithTransformOutput(userConfig, transformerOutput);
 
-        expect(pipelineFunctions['Query.listTodos.req.vtl']).toEqual('$util.unauthorized\n');
+        expect(resolvers['Query.listTodos.req.vtl']).toEqual('$util.unauthorized\n');
       });
     });
 

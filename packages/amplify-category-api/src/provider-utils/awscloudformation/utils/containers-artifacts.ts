@@ -2,17 +2,18 @@ import { Octokit } from '@octokit/rest';
 import * as fs from 'fs-extra';
 import inquirer from 'inquirer';
 import * as path from 'path';
-import uuid from 'uuid';
+import { v4 as uuid } from 'uuid';
 import { provider as cloudformationProviderName } from '../../../provider-utils/awscloudformation/aws-constants';
 import { getContainers } from '../../../provider-utils/awscloudformation/docker-compose';
 import Container from '../docker-compose/ecs-objects/container';
 import { EcsStack } from '../ecs-apigw-stack';
 import { API_TYPE, ResourceDependency } from '../../../provider-utils/awscloudformation/service-walkthroughs/containers-walkthrough';
 import { getGitHubOwnerRepoFromPath } from '../../../provider-utils/awscloudformation/utils/github';
-import { JSONUtilities, pathManager, readCFNTemplate } from 'amplify-cli-core';
+import { $TSAny, $TSContext, JSONUtilities, pathManager, readCFNTemplate } from 'amplify-cli-core';
 import { DEPLOYMENT_MECHANISM } from '../base-api-stack';
 import { setExistingSecretArns } from './containers/set-existing-secret-arns';
 import { category } from '../../../category-constants';
+import * as cdk from '@aws-cdk/core';
 
 export const cfnFileName = (resourceName: string) => `${resourceName}-cloudformation-template.json`;
 
@@ -28,9 +29,9 @@ export type ApiResource = {
   restrictAccess: boolean;
   dependsOn: ResourceDependency[];
   environmentMap: Record<string, string>;
-  categoryPolicies: any[];
-  mutableParametersState: any;
-  output?: Record<string, any>;
+  categoryPolicies: $TSAny[];
+  mutableParametersState: $TSAny;
+  output?: Record<string, $TSAny>;
   apiType?: API_TYPE;
   exposedContainer?: { name: string; port: number };
 };
@@ -46,7 +47,7 @@ type ContainerArtifactsMetadata = {
 };
 
 export async function generateContainersArtifacts(
-  context: any,
+  context: $TSContext,
   resource: ApiResource,
   askForExposedContainer: boolean = false,
 ): Promise<ContainerArtifactsMetadata> {
@@ -99,6 +100,7 @@ export async function generateContainersArtifacts(
     isInitialDeploy,
     desiredCount,
     restrictAccess,
+    currentStackName: envName,
     apiType,
     exposedContainer,
     secretsArns,
@@ -115,7 +117,12 @@ export async function generateContainersArtifacts(
   };
 }
 
-export async function processDockerConfig(context: any, resource: ApiResource, srcPath: string, askForExposedContainer: boolean = false) {
+export async function processDockerConfig(
+  context: $TSContext,
+  resource: ApiResource,
+  srcPath: string,
+  askForExposedContainer: boolean = false,
+) {
   const {
     providers: { [cloudformationProviderName]: provider },
   } = context.amplify.getProjectMeta();
@@ -284,12 +291,20 @@ export async function processDockerConfig(context: any, resource: ApiResource, s
         version: uuid(),
       });
 
-      secretsArns.set(secretName, secretArn);
+      const [prefix,] = secretArn.toString().split(ssmSecretName);
+      const secretArnRef = cdk.Fn.join('', [
+        prefix,
+        cdk.Fn.ref('rootStackName'),
+        '-',
+        resourceName,
+        '-',
+        secretName,
+      ]);
+
+      secretsArns.set(secretName, secretArnRef);
     }
   } else {
-    const { cfnTemplate } = await readCFNTemplate(
-      path.join(pathManager.getBackendDirPath(), category, resourceName, cfnFileName(resourceName)),
-    );
+    const { cfnTemplate } = readCFNTemplate(path.join(pathManager.getBackendDirPath(), category, resourceName, cfnFileName(resourceName)));
     setExistingSecretArns(secretsArns, cfnTemplate);
   }
 
@@ -305,7 +320,7 @@ export async function processDockerConfig(context: any, resource: ApiResource, s
   };
 }
 
-async function shouldUpdateSecrets(context: any, secrets: Record<string, string>): Promise<boolean> {
+async function shouldUpdateSecrets(context: $TSContext, secrets: Record<string, string>): Promise<boolean> {
   const hasSecrets = Object.keys(secrets).length > 0;
 
   if (!hasSecrets || context.exeInfo.inputParams.yes) {

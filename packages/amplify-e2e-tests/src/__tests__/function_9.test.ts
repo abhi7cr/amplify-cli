@@ -1,37 +1,32 @@
 import {
-  addApiWithSchema,
+  addApiWithoutSchema,
   addApi,
-  addAuthWithDefault,
   addDDBWithTrigger,
   addFunction,
-  addS3StorageWithSettings,
   addSimpleDDB,
-  AddStorageSettings,
   amplifyPush,
   amplifyPushAuth,
-  amplifyPushForce,
   createNewProjectDir,
   deleteProject,
   deleteProjectDir,
   getBackendAmplifyMeta,
-  getFunctionSrcNode,
   getProjectMeta,
   initJSProjectWithProfile,
   invokeFunction,
-  overrideFunctionSrcNode,
   addNodeDependencies,
   readJsonFile,
   updateFunction,
   overrideFunctionCodeNode,
   getBackendConfig,
   addFeatureFlag,
-  addAuthWithGroupsAndAdminAPI,
-  getFunction,
-  loadFunctionTestFile,
+  updateApiSchema,
+  createRandomName,
 } from 'amplify-e2e-core';
 import fs from 'fs-extra';
 import path from 'path';
 import _ from 'lodash';
+
+const GraphQLTransformerLatestVersion = 2;
 
 describe('nodejs', () => {
   describe('amplify add function with additional permissions', () => {
@@ -80,8 +75,12 @@ describe('nodejs', () => {
     });
 
     it('adding api and storage permissions should not add duplicates to CFN', async () => {
-      await initJSProjectWithProfile(projRoot, {});
-      await addApiWithSchema(projRoot, 'two-model-schema.graphql');
+      const appName = createRandomName();
+      await initJSProjectWithProfile(projRoot, {
+        name: appName,
+      });
+      await addApiWithoutSchema(projRoot, { transformerVersion: 1 });
+      await updateApiSchema(projRoot, appName, 'two-model-schema.graphql');
 
       const random = Math.floor(Math.random() * 10000);
       const fnName = `integtestfn${random}`;
@@ -143,8 +142,12 @@ describe('nodejs', () => {
     });
 
     it('function dependencies should be preserved when not editing permissions during `amplify update function`', async () => {
-      await initJSProjectWithProfile(projRoot, {});
-      await addApiWithSchema(projRoot, 'two-model-schema.graphql');
+      const appName = createRandomName();
+      await initJSProjectWithProfile(projRoot, {
+        name: appName,
+      });
+      await addApiWithoutSchema(projRoot, { transformerVersion: 1 });
+      await updateApiSchema(projRoot, appName, 'two-model-schema.graphql');
 
       const random = Math.floor(Math.random() * 10000);
       const fnName = `integtestfn${random}`;
@@ -211,7 +214,68 @@ describe('nodejs', () => {
       await initJSProjectWithProfile(projRoot, {});
       await addApi(projRoot, {
         IAM: {},
+        transformerVersion: 1,
       });
+      const beforeMeta = getBackendConfig(projRoot);
+      const apiName = Object.keys(beforeMeta.api)[0];
+      await addFunction(
+        projRoot,
+        {
+          name: fnName,
+          functionTemplate: 'Hello World',
+          additionalPermissions: {
+            permissions: ['api'],
+            choices: ['api'],
+            resources: [apiName],
+            operations: ['Mutation'],
+          },
+        },
+        'nodejs',
+      );
+      // Pin aws-appsync to 4.0.3 until https://github.com/awslabs/aws-mobile-appsync-sdk-js/issues/647 is fixed.
+      addNodeDependencies(projRoot, fnName, ['aws-appsync@4.0.3', 'isomorphic-fetch', 'graphql-tag']);
+      overrideFunctionCodeNode(projRoot, fnName, 'mutation-appsync.js');
+      await amplifyPush(projRoot);
+      const meta = getProjectMeta(projRoot);
+      const { Region: region, Name: functionName } = Object.keys(meta.function).map(key => meta.function[key])[0].output;
+      const lambdaCFN = readJsonFile(
+        path.join(projRoot, 'amplify', 'backend', 'function', fnName, `${fnName}-cloudformation-template.json`),
+      );
+      const urlKey = Object.keys(lambdaCFN.Resources.LambdaFunction.Properties.Environment.Variables).filter(value =>
+        value.endsWith('GRAPHQLAPIENDPOINTOUTPUT'),
+      )[0];
+      const payloadObj = { urlKey, mutation: createTodo, variables: { input: { name: 'todo', description: 'sampleDesc' } } };
+      const fnResponse = await invokeFunction(functionName, JSON.stringify(payloadObj), region);
+
+      expect(fnResponse.StatusCode).toBe(200);
+      expect(fnResponse.Payload).toBeDefined();
+      const gqlResponse = JSON.parse(fnResponse.Payload as string);
+
+      expect(gqlResponse.data).toBeDefined();
+      expect(gqlResponse.data.createTodo.name).toEqual('todo');
+      expect(gqlResponse.data.createTodo.description).toEqual('sampleDesc');
+    });
+
+    it('should be able to query AppSync with minimal permissions with featureFlag for function and vNext GraphQL API', async () => {
+      const appName = 'functiongqlvnext';
+      const random = Math.floor(Math.random() * 10000);
+      const fnName = `apienvvar${random}`;
+      const createTodo = `
+        mutation CreateTodo($input: CreateTodoInput!) {
+          createTodo(input: $input) {
+            id
+            name
+            description
+            createdAt
+            updatedAt
+          }
+        }`;
+      await initJSProjectWithProfile(projRoot, { name: appName });
+      await addApi(projRoot, {
+        IAM: {},
+        transformerVersion: GraphQLTransformerLatestVersion,
+      });
+      updateApiSchema(projRoot, appName, 'iam_simple_model.graphql');
       const beforeMeta = getBackendConfig(projRoot);
       const apiName = Object.keys(beforeMeta.api)[0];
       await addFunction(
@@ -258,6 +322,7 @@ describe('nodejs', () => {
       await initJSProjectWithProfile(projRoot, {});
       await addApi(projRoot, {
         IAM: {},
+        transformerVersion: 1,
       });
       const beforeMeta = getBackendConfig(projRoot);
       const apiName = Object.keys(beforeMeta.api)[0];
@@ -293,6 +358,51 @@ describe('nodejs', () => {
       const apiResponse = JSON.parse(fnResponse.Payload as string);
       expect(apiResponse.graphqlApi).toBeDefined();
       expect(apiResponse.graphqlApi.name).toContain(apiName);
+    });
+
+    it('allows granting of API access then revoking it', async () => {
+      const appName = createRandomName();
+
+      await initJSProjectWithProfile(projRoot, { name: appName });
+      await addApiWithoutSchema(projRoot);
+      await updateApiSchema(projRoot, appName, 'simple_model.graphql');
+
+      const random = Math.floor(Math.random() * 10000);
+      const fnName = `integtestfn${random}`;
+
+      await addFunction(
+        projRoot,
+        {
+          name: fnName,
+          functionTemplate: 'Hello World',
+          additionalPermissions: {
+            permissions: ['api'],
+            choices: ['api'],
+            resources: [appName],
+            operations: ['Mutation'],
+          },
+        },
+        'nodejs',
+      );
+
+      let lambdaCFN = readJsonFile(path.join(projRoot, 'amplify', 'backend', 'function', fnName, `${fnName}-cloudformation-template.json`));
+
+      expect(lambdaCFN.Resources.AmplifyResourcesPolicy.Properties.PolicyDocument.Statement.length).toBe(1);
+
+      await updateFunction(
+        projRoot,
+        {
+          additionalPermissions: {
+            permissions: ['api'], // unselects 'api'
+            choices: ['api'],
+          },
+        },
+        'nodejs',
+      );
+
+      lambdaCFN = readJsonFile(path.join(projRoot, 'amplify', 'backend', 'function', fnName, `${fnName}-cloudformation-template.json`));
+
+      expect(lambdaCFN?.Resources?.AmplifyResourcesPolicy?.Properties?.PolicyDocument?.Statement?.length).toBeUndefined();
     });
   });
 });

@@ -1,21 +1,22 @@
-import inquirer from 'inquirer';
+import { $TSContext, $TSObject, exitOnNextTick, ResourceCredentialsNotFoundError, ResourceDoesNotExistError, pathManager, JSONUtilities, $TSAny } from 'amplify-cli-core';
+import { printer, prompter } from 'amplify-prompts';
 import chalk from 'chalk';
-import ora from 'ora';
 import { DataApiParams } from 'graphql-relational-schema-transformer';
-import { ResourceDoesNotExistError, ResourceCredentialsNotFoundError, exitOnNextTick, $TSContext, $TSObject } from 'amplify-cli-core';
+import ora from 'ora';
+import { cfnRootStackFileName } from 'amplify-provider-awscloudformation';
 
 const spinner = ora('');
 const category = 'api';
 const providerName = 'awscloudformation';
 
-export async function serviceWalkthrough(context: $TSContext, defaultValuesFilename: string, datasourceMetadata: $TSObject) {
+export async function serviceWalkthrough(context: $TSContext, datasourceMetadata: $TSObject) {
   const amplifyMeta = context.amplify.getProjectMeta();
 
   // Verify that an API exists in the project before proceeding.
   if (amplifyMeta == null || amplifyMeta[category] == null || Object.keys(amplifyMeta[category]).length === 0) {
     const errMessage =
       'You must create an AppSync API in your project before adding a graphql datasource. Please use "amplify api add" to create the API.';
-    context.print.error(errMessage);
+    printer.error(errMessage);
     await context.usageData.emitError(new ResourceDoesNotExistError(errMessage));
     exitOnNextTick(0);
   }
@@ -24,9 +25,9 @@ export async function serviceWalkthrough(context: $TSContext, defaultValuesFilen
   let appSyncApi: string;
   const apis = Object.keys(amplifyMeta[category]);
 
-  for (let i = 0; i < apis.length; i += 1) {
-    if (amplifyMeta[category][apis[i]].service === 'AppSync') {
-      appSyncApi = apis[i];
+  for (const api of apis) {
+    if (amplifyMeta[category][api].service === 'AppSync') {
+      appSyncApi = api;
       break;
     }
   }
@@ -35,15 +36,21 @@ export async function serviceWalkthrough(context: $TSContext, defaultValuesFilen
   if (!appSyncApi) {
     const errMessage =
       'You must create an AppSync API in your project before adding a graphql datasource. Please use "amplify api add" to create the API.';
-    context.print.error(errMessage);
+    printer.error(errMessage);
     await context.usageData.emitError(new ResourceDoesNotExistError(errMessage));
     exitOnNextTick(0);
   }
 
   const { inputs, availableRegions } = datasourceMetadata;
 
+  // FIXME: We should NOT be treating CloudFormation templates as inputs to prompts! This a temporary exception while we move team-provider-info to a service.
+  const cfnJson: $TSAny = JSONUtilities.readJson(`${pathManager.getCurrentCloudRootStackDirPath(pathManager.findProjectRoot())}/${cfnRootStackFileName}`);
+  const cfnJsonParameters = cfnJson?.Resources[`api${appSyncApi}`]?.Properties?.Parameters || {};
+  let selectedRegion = cfnJsonParameters?.rdsRegion;
   // Region Question
-  const selectedRegion = await promptWalkthroughQuestion(inputs, 0, availableRegions);
+  if (!selectedRegion) {
+    selectedRegion = await promptWalkthroughQuestion(inputs, 0, availableRegions);
+  }
 
   const AWS = await getAwsClient(context, 'list');
 
@@ -53,13 +60,23 @@ export async function serviceWalkthrough(context: $TSContext, defaultValuesFilen
   });
 
   // RDS Cluster Question
-  const { selectedClusterArn, clusterResourceId } = await selectCluster(context, inputs, AWS);
+  let selectedClusterArn = cfnJsonParameters?.rdsClusterIdentifier
+  let clusterResourceId = getRdsClusterResourceIdFromArn(selectedClusterArn, AWS);
+  if (!selectedClusterArn || !clusterResourceId) {
+    ({ selectedClusterArn, clusterResourceId } = await selectCluster(context, inputs, AWS));
+  }
 
   // Secret Store Question
-  const selectedSecretArn = await getSecretStoreArn(context, inputs, clusterResourceId, AWS);
+  let selectedSecretArn = cfnJsonParameters?.rdsSecretStoreArn;
+  if (!selectedSecretArn) {
+    selectedSecretArn = await getSecretStoreArn(context, inputs, clusterResourceId, AWS);
+  }
 
   // Database Name Question
-  const selectedDatabase = await selectDatabase(context, inputs, selectedClusterArn, selectedSecretArn, AWS);
+  let selectedDatabase = cfnJsonParameters?.rdsDatabaseName;
+  if (!selectedDatabase) {
+    selectedDatabase = await selectDatabase(context, inputs, selectedClusterArn, selectedSecretArn, AWS);
+  }
 
   return {
     region: selectedRegion,
@@ -68,6 +85,19 @@ export async function serviceWalkthrough(context: $TSContext, defaultValuesFilen
     databaseName: selectedDatabase,
     resourceName: appSyncApi,
   };
+}
+
+async function getRdsClusterResourceIdFromArn(arn: string|undefined, AWS) {
+  // If the arn was not already existing in cloudformation template, return undefined to prompt for input.
+  if (!arn) {
+    return;
+  }
+
+  const RDS = new AWS.RDS();
+  const describeDBClustersResult = await RDS.describeDBClusters().promise();
+  const rawClusters = describeDBClustersResult.DBClusters;
+  const identifiedCluster = rawClusters.find(cluster => cluster.DBClusterArn === arn);
+  return identifiedCluster.DBClusterIdentifier;
 }
 
 /**
@@ -86,7 +116,7 @@ async function selectCluster(context: $TSContext, inputs, AWS) {
   if (serverlessClusters.length === 0) {
     const errMessage = 'No properly configured Aurora Serverless clusters found.';
 
-    context.print.error(errMessage);
+    printer.error(errMessage);
 
     await context.usageData.emitError(new ResourceDoesNotExistError(errMessage));
 
@@ -110,7 +140,7 @@ async function selectCluster(context: $TSContext, inputs, AWS) {
   // Pick first and only value
   const firstCluster = Array.from(clusters.values())[0];
 
-  context.print.info(`${chalk.green('✔')} Only one Cluster was found: '${firstCluster.DBClusterIdentifier}' was automatically selected.`);
+  printer.info(`${chalk.green('✔')} Only one Cluster was found: '${firstCluster.DBClusterIdentifier}' was automatically selected.`);
 
   return {
     selectedClusterArn: firstCluster.DBClusterArn,
@@ -148,7 +178,7 @@ async function getSecretStoreArn(context: $TSContext, inputs, clusterResourceId,
   if (secretsForCluster.length === 0) {
     const errMessage = 'No RDS access credentials found in the AWS Secrect Manager.';
 
-    context.print.error(errMessage);
+    printer.error(errMessage);
 
     await context.usageData.emitError(new ResourceCredentialsNotFoundError(errMessage));
 
@@ -169,7 +199,7 @@ async function getSecretStoreArn(context: $TSContext, inputs, clusterResourceId,
     // Pick first and only value
     selectedSecretArn = Array.from(secrets.values())[0];
 
-    context.print.info(`${chalk.green('✔')} Only one Secret was found for the cluster: '${selectedSecretArn}' was automatically selected.`);
+    printer.info(`${chalk.green('✔')} Only one Secret was found for the cluster: '${selectedSecretArn}' was automatically selected.`);
   }
 
   return selectedSecretArn;
@@ -206,14 +236,14 @@ async function selectDatabase(context: $TSContext, inputs, clusterArn, secretArn
       const msg =
         `Ensure that '${secretArn}' contains your database credentials. ` +
         'Please note that Aurora Serverless does not support IAM database authentication.';
-      context.print.error(msg);
+      printer.error(msg);
     }
   }
 
   if (databaseList.length === 0) {
     const errMessage = 'No database found in the selected cluster.';
 
-    context.print.error(errMessage);
+    printer.error(errMessage);
 
     await context.usageData.emitError(new ResourceDoesNotExistError(errMessage));
 
@@ -224,7 +254,7 @@ async function selectDatabase(context: $TSContext, inputs, clusterArn, secretArn
     return await promptWalkthroughQuestion(inputs, 3, databaseList);
   }
 
-  context.print.info(`${chalk.green('✔')} Only one Database was found: '${databaseList[0]}' was automatically selected.`);
+  printer.info(`${chalk.green('✔')} Only one Database was found: '${databaseList[0]}' was automatically selected.`);
 
   return databaseList[0];
 }
@@ -236,17 +266,13 @@ async function selectDatabase(context: $TSContext, inputs, clusterArn, secretArn
  * @param {*} choicesList
  */
 async function promptWalkthroughQuestion(inputs, questionNumber, choicesList) {
-  const question = [
-    {
+  const question = {
       type: inputs[questionNumber].type,
       name: inputs[questionNumber].key,
       message: inputs[questionNumber].question,
       choices: choicesList,
-    },
-  ];
-
-  const answer = await inquirer.prompt(question);
-  return answer[inputs[questionNumber].key];
+    };
+  return await prompter.pick(question.message, choicesList)
 }
 
 async function getAwsClient(context: $TSContext, action: string) {

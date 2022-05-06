@@ -12,7 +12,9 @@ export * from './init/';
 export * from './utils/';
 export * from './categories';
 export * from './utils/sdk-calls';
+export * from './export/';
 export { addFeatureFlag } from './utils/feature-flags';
+export * from './cli-version-controller';
 
 declare global {
   namespace NodeJS {
@@ -38,14 +40,12 @@ export function getCLIPath(testingWithLatestCodebase = false) {
 }
 
 export function isTestingWithLatestCodebase(scriptRunnerPath) {
-  return scriptRunnerPath === process.execPath
+  return scriptRunnerPath === process.execPath;
 }
 
 export function getScriptRunnerPath(testingWithLatestCodebase = false) {
   if (!testingWithLatestCodebase) {
-    return process.platform === 'win32'
-      ? 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
-      : 'exec';
+    return process.platform === 'win32' ? 'node.exe' : 'exec';
   }
 
   // nodejs executable
@@ -58,6 +58,14 @@ export function getNpxPath() {
     npxPath = getScriptRunnerPath().replace('node.exe', 'npx.cmd');
   }
   return npxPath;
+}
+
+export function getNpmPath() {
+  let npmPath = 'npm';
+  if (process.platform === 'win32') {
+    npmPath = getScriptRunnerPath().replace('node.exe', 'npm.cmd');
+  }
+  return npmPath;
 }
 
 export function isCI(): boolean {
@@ -81,9 +89,10 @@ export async function installAmplifyCLI(version: string = 'latest') {
     env: process.env,
     stdio: 'inherit',
   });
-  process.env.AMPLIFY_PATH = process.platform === 'win32'
-   ? path.join(os.homedir(), '..', '..', 'Program` Files', 'nodejs', 'node_modules', '@aws-amplify', 'cli', 'bin', 'amplify')
-   : path.join(os.homedir(), '.npm-global', 'bin', 'amplify');
+  process.env.AMPLIFY_PATH =
+    process.platform === 'win32'
+      ? path.join(os.homedir(), '..', '..', 'Program` Files', 'nodejs', 'node_modules', '@aws-amplify', 'cli', 'bin', 'amplify')
+      : path.join(os.homedir(), '.npm-global', 'bin', 'amplify');
 }
 
 export async function createNewProjectDir(

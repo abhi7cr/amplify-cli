@@ -6,31 +6,31 @@ machine:
     PATH: '${PATH}:${HOME}/${CIRCLE_PROJECT_REPONAME}/node_modules/.bin'
 
 executors:
-  windows: &windows-e2e-executor
+  w: &windows-e2e-executor
     machine:
       image: 'windows-server-2019-vs2019:stable'
-      resource_class: 'windows.large'
+      resource_class: 'windows.medium'
       shell: bash.exe
     working_directory: ~/repo
     environment:
       AMPLIFY_DIR: C:/home/circleci/repo/out
       AMPLIFY_PATH: C:/home/circleci/repo/out/amplify.exe
 
-  linux: &linux-e2e-executor
+  l: &linux-e2e-executor
     docker:
-      - image: public.ecr.aws/a6e6w2n0/amplify-cli-e2e-base-image-repo-public:latest
+      - image: public.ecr.aws/j4f5f3h7/amplify-cli-e2e-base-image-repo-public:latest
     working_directory: ~/repo
     resource_class: large
     environment:
       AMPLIFY_DIR: /home/circleci/repo/out
-      AMPLIFY_PATH: /home/circleci/repo/out/amplify-pkg-linux
+      AMPLIFY_PATH: /home/circleci/repo/out/amplify-pkg-linux-x64
 
 defaults: &defaults
   working_directory: ~/repo
   parameters:
     os:
       type: executor
-      default: linux
+      default: l
   executor: << parameters.os >>
 
 clean_e2e_resources: &clean_e2e_resources
@@ -43,6 +43,7 @@ clean_e2e_resources: &clean_e2e_resources
 
 scan_e2e_test_artifacts: &scan_e2e_test_artifacts
   name: Scan And Cleanup E2E Test Artifacts
+  no_output_timeout: 90m
   command: |
     if ! yarn ts-node .circleci/scan_artifacts.ts; then
       echo "Cleaning the repository"
@@ -67,11 +68,14 @@ jobs:
     parameters:
       os:
         type: executor
-        default: linux
+        default: l
     executor: << parameters.os >>
     steps:
       - checkout
       - run: yarn run production-build
+      - run:
+          name: Build tests
+          command: yarn build-tests
       - save_cache:
           key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
           paths:
@@ -95,17 +99,20 @@ jobs:
       - restore_cache:
           key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
       - run:
-          name: Install Java
-          command: sudo apt-get update && sudo apt-get install default-jdk
-      - run:
-          name: Lint
-          command: yarn lint
-      - run:
           name: Run tests
           command: yarn test-ci
       - run:
           name: Collect code coverage
           command: yarn coverage
+
+  lint:
+    <<: *linux-e2e-executor
+    steps:
+      - attach_workspace:
+          at: ./
+      - restore_cache:
+          key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
+      - run: chmod +x .circleci/lint_pr.sh && ./.circleci/lint_pr.sh
 
   mock_e2e_tests:
     <<: *linux-e2e-executor
@@ -114,9 +121,6 @@ jobs:
           at: ./
       - restore_cache:
           key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
-      - run:
-          name: Install Java
-          command: sudo apt-get update && sudo apt-get install default-jdk
       - run:
           name: Run Transformer end-to-end tests with mock server
           command: |
@@ -142,10 +146,14 @@ jobs:
             source .circleci/local_publish_helpers.sh
             startLocalRegistry "$(pwd)/.circleci/verdaccio.yaml"
             setNpmRegistryUrlToLocal
-            loginToLocalRegistry
             git config user.email not@used.com
             git config user.name "Doesnt Matter"
-            yarn publish-to-verdaccio
+            setNpmTag
+            if [ -z $NPM_TAG ]; then
+              yarn publish-to-verdaccio
+            else
+              yarn lerna publish --exact --dist-tag=latest --preid=$NPM_TAG --conventional-commits --conventional-prerelease --no-verify-access --yes --no-commit-hooks --no-push --no-git-tag-version
+            fi
             unsetNpmRegistryUrl
       - run:
           name: Generate unified changelog
@@ -185,8 +193,10 @@ jobs:
             startLocalRegistry "$(pwd)/.circleci/verdaccio.yaml"
             setNpmRegistryUrlToLocal
             changeNpmGlobalPath
+            yarn yarn-use-bash
             yarn pkg-all
             unsetNpmRegistryUrl
+            uploadPkgCli
       - save_cache:
           key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
           paths:
@@ -233,35 +243,11 @@ jobs:
             unsetSudoNpmRegistryUrl
             amplify version
 
-  amplify_e2e_tests:
-    <<: *defaults
-    steps:
-      - attach_workspace:
-          at: ./
-      - restore_cache:
-          key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
-      - restore_cache:
-          key: amplify-verdaccio-cache-{{ .Branch }}-{{ .Revision }}
-      - restore_cache:
-          key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
-      - run: *install_cli_from_local_registery
-      - run:
-          name: Run E2e Tests
-          command: |
-            source .circleci/local_publish_helpers.sh
-            retry runE2eTest
-          no_output_timeout: 90m
-      - run: *scan_e2e_test_artifacts
-      - store_test_results:
-          path: packages/amplify-e2e-tests/
-      - store_artifacts:
-          path: ~/repo/packages/amplify-e2e-tests/amplify-e2e-reports
-
   amplify_e2e_tests_pkg:
     parameters:
       os:
         type: executor
-        default: os.linux
+        default: l
     executor: << parameters.os >>
     working_directory: ~/repo
     steps:
@@ -290,7 +276,7 @@ jobs:
       # - clean_e2e_resources:
       #     os: << parameters.os >>
 
-  amplify_migration_tests_v4:
+  amplify_migration_tests_v5:
     <<: *defaults
     steps:
       - attach_workspace:
@@ -300,12 +286,38 @@ jobs:
       - restore_cache:
           key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
       - run:
-          name: Run tests migrating from CLI v4.0.0
+          name: Run tests migrating from CLI v5.2.0
           command: |
             source .circleci/local_publish_helpers.sh
             changeNpmGlobalPath
             cd packages/amplify-migration-tests
-            retry yarn run migration_v4.0.0 --maxWorkers=3 $TEST_SUITE
+            retry yarn run migration_v5.2.0 --maxWorkers=3 $TEST_SUITE
+          no_output_timeout: 90m
+      - run: *scan_e2e_test_artifacts
+      - store_test_results:
+          path: packages/amplify-migration-tests/
+      - store_artifacts:
+          path: ~/repo/packages/amplify-migration-tests/amplify-migration-reports
+    working_directory: ~/repo
+
+  amplify_migration_tests_v6:
+    environment:
+      AMPLIFY_PATH: /home/circleci/.npm-global/lib/node_modules/@aws-amplify/cli/bin/amplify
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: ./
+      - restore_cache:
+          key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
+      - restore_cache:
+          key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: Run tests migrating from CLI v6.1.0
+          command: |
+            source .circleci/local_publish_helpers.sh
+            changeNpmGlobalPath
+            cd packages/amplify-migration-tests
+            retry yarn run migration_v6.1.0 --maxWorkers=3 $TEST_SUITE
           no_output_timeout: 90m
       - run: *scan_e2e_test_artifacts
       - store_test_results:
@@ -366,61 +378,6 @@ jobs:
           path: ~/repo/packages/amplify-migration-tests/amplify-migration-reports
     working_directory: ~/repo
 
-  amplify_migration_tests_v4_30_0:
-    <<: *defaults
-    environment:
-      AMPLIFY_PATH: /home/circleci/.npm-global/lib/node_modules/@aws-amplify/cli/bin/amplify
-    steps:
-      - attach_workspace:
-          at: ./
-      - restore_cache:
-          key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
-      - restore_cache:
-          key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
-      - run:
-          name: Update OS Packages
-          command: sudo apt-get update
-      - run:
-          name: Run tests migrating from CLI v4.30.0
-          command: |
-            source .circleci/local_publish_helpers.sh
-            changeNpmGlobalPath
-            cd packages/amplify-migration-tests
-            retry yarn run migration_v4.30.0_auth --maxWorkers=3
-          no_output_timeout: 90m
-      - run: *scan_e2e_test_artifacts
-      - store_test_results:
-          path: packages/amplify-migration-tests/
-      - store_artifacts:
-          path: ~/repo/packages/amplify-migration-tests/amplify-migration-reports
-    working_directory: ~/repo
-
-  amplify_migration_tests_latest:
-    environment:
-      AMPLIFY_PATH: /home/circleci/.npm-global/lib/node_modules/@aws-amplify/cli/bin/amplify
-    <<: *defaults
-    steps:
-      - attach_workspace:
-          at: ./
-      - restore_cache:
-          key: amplify-cli-yarn-deps-{{ .Branch }}-{{ checksum "yarn.lock" }}-{{ arch }}
-      - restore_cache:
-          key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
-      - run:
-          name: Run tests migrating from latest CLI
-          command: |
-            source .circleci/local_publish_helpers.sh
-            changeNpmGlobalPath
-            cd packages/amplify-migration-tests
-            retry yarn run migration --maxWorkers=3 $TEST_SUITE
-          no_output_timeout: 90m
-      - run: *scan_e2e_test_artifacts
-      - store_test_results:
-          path: packages/amplify-migration-tests/
-      - store_artifacts:
-          path: ~/repo/packages/amplify-migration-tests/amplify-migration-reports
-    working_directory: ~/repo
-
   amplify_console_integration_tests:
     <<: *defaults
     steps:
@@ -450,7 +407,7 @@ jobs:
     working_directory: ~/repo
     resource_class: large
     docker:
-      - image: cypress/base:12
+      - image: cypress/base:14.17.0
         environment:
           TERM: dumb
     steps:
@@ -458,6 +415,7 @@ jobs:
           at: ./
       - restore_cache:
           key: amplify-verdaccio-cache-{{ .Branch }}-{{ .Revision }}
+      - run: cd .circleci/ && chmod +x aws.sh
       - run:
           name: Setup Dependencies
           command: |
@@ -470,7 +428,6 @@ jobs:
             sudo apt-get install -y python python-pip libpython-dev
             sudo apt-get install -y jq
             pip install awscli
-      - run: cd .circleci/ && chmod +x aws.sh
       - run: expect .circleci/aws_configure.exp
       - run:
           name: Configure Amplify CLI
@@ -485,6 +442,7 @@ jobs:
             git clone $AUTH_CLONE_URL
             cd aws-amplify-cypress-auth
             yarn --cache-folder ~/.cache/yarn
+            yarn add cypress@6.8.0 --save
       - run: cd .circleci/ && chmod +x auth.sh
       - run: cd .circleci/ && chmod +x amplify_init.sh
       - run: cd .circleci/ && chmod +x amplify_init.exp
@@ -505,7 +463,6 @@ jobs:
           name: Run cypress tests for auth
           command: |
             cd ../aws-amplify-cypress-auth
-            yarn add cypress@6.8.0 --save
             cp ../repo/cypress.json .
             cp -R ../repo/cypress .
             yarn cypress run --spec $(find . -type f -name 'auth_spec*')
@@ -560,6 +517,14 @@ jobs:
       - restore_cache:
           keys:
             - amplify-cli-ssh-deps-{{ .Branch }}
+      - restore_cache:
+          key: amplify-pkg-binaries-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: Upload Pkg Binary
+          command: |
+            source .circleci/local_publish_helpers.sh
+            uploadPkgCli
+            ./out/amplify-pkg-linux-x64 --version
       - run:
           name: Authenticate with npm
           command: echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
@@ -583,6 +548,9 @@ jobs:
           name: Compress binaries
           command: |
             cd out
+            mv amplify-pkg-macos-x64 amplify-pkg-macos
+            mv amplify-pkg-linux-x64 amplify-pkg-linux
+            mv amplify-pkg-win-x64.exe amplify-pkg-win.exe
             tar zcvf amplify-pkg-macos.tgz amplify-pkg-macos
             tar zcvf amplify-pkg-linux.tgz amplify-pkg-linux
             tar zcvf amplify-pkg-win.exe.tgz amplify-pkg-win.exe
@@ -672,15 +640,20 @@ workflows:
       - publish_to_local_registry:
           requires:
             - build
+      - build_pkg_binaries:
+          context:
+            - e2e-auth-credentials
+            - e2e-test-context
+            - amplify-s3-upload
+          requires:
+            - publish_to_local_registry
       - amplify_console_integration_tests:
           context:
-            - amplify-ecr-image-pull
             - console-e2e-test
             - e2e-auth-credentials
             - e2e-test-context
           requires:
-            - build
-            - publish_to_local_registry
+            - build_pkg_binaries
   e2e_resource_cleanup:
     triggers:
       - schedule:
@@ -697,15 +670,24 @@ workflows:
             - e2e-test-context
           requires:
             - build
-
-  build_test_deploy:
+  nightly_e2e_tests:
+    triggers:
+      - schedule:
+          cron: '0 12 * * *'
+          filters:
+            branches:
+              only:
+                - master
     jobs:
       - build:
           matrix:
             parameters:
               os:
-                - linux
-                - windows
+                - l
+                - w
+      - lint:
+          requires:
+            - build
       - test:
           requires:
             - build
@@ -714,7 +696,91 @@ workflows:
             - build
       - graphql_e2e_tests:
           context:
-            - amplify-ecr-image-pull
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - integration_test:
+          context:
+            - e2e-test-context
+          requires:
+            - build
+      - publish_to_local_registry:
+          requires:
+            - build
+      - build_pkg_binaries:
+          context:
+            - e2e-auth-credentials
+            - e2e-test-context
+            - amplify-s3-upload
+          requires:
+            - publish_to_local_registry
+      - amplify_sudo_install_test:
+          context: amplify-ecr-image-pull
+          requires:
+            - build_pkg_binaries
+      - amplify_e2e_tests_pkg:
+          context:
+            - cleanup-resources
+            - e2e-auth-credentials
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - amplify_migration_tests_v6:
+          context:
+            - e2e-auth-credentials
+            - cleanup-resources
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - amplify_migration_tests_v5:
+          context:
+            - e2e-auth-credentials
+            - cleanup-resources
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - amplify_migration_tests_non_multi_env_layers:
+          context:
+            - e2e-auth-credentials
+            - cleanup-resources
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - amplify_migration_tests_multi_env_layers:
+          context:
+            - e2e-auth-credentials
+            - cleanup-resources
+            - e2e-test-context
+          requires:
+            - build_pkg_binaries
+      - cleanup_resources_after_e2e_runs:
+          context:
+            - cleanup-resources
+            - e2e-test-context
+          requires:
+            - amplify_e2e_tests_pkg
+            - amplify_migration_tests_v6
+            - amplify_migration_tests_v5
+
+  build_test_deploy:
+    jobs:
+      - build:
+          matrix:
+            parameters:
+              os:
+                - l
+                - w
+      - lint:
+          requires:
+            - build
+      - test:
+          requires:
+            - build
+      - mock_e2e_tests:
+          requires:
+            - build
+      - graphql_e2e_tests:
+          context:
             - e2e-test-context
           filters:
             branches:
@@ -723,10 +789,9 @@ workflows:
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
           requires:
-            - build
+            - build_pkg_binaries
       - integration_test:
           context:
-            - amplify-ecr-image-pull
             - e2e-test-context
           filters:
             branches:
@@ -745,41 +810,29 @@ workflows:
                 - beta
                 - release
                 - /tagged-release\/.*/
+                - /tagged-release-without-e2e-tests\/.*/
                 - /run-e2e\/.*/
           requires:
             - build
       - build_pkg_binaries:
+          context:
+            - e2e-auth-credentials
+            - e2e-test-context
+            - amplify-s3-upload
           requires:
             - publish_to_local_registry
       - amplify_sudo_install_test:
           context: amplify-ecr-image-pull
           requires:
-            - publish_to_local_registry
+            - build_pkg_binaries
           filters:
             branches:
               only:
                 - master
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
-      - amplify_e2e_tests:
-          context:
-            - amplify-ecr-image-pull
-            - cleanup-resources
-            - e2e-auth-credentials
-            - e2e-test-context
-          # post-steps:
-          #   - run: *clean_e2e_resources
-          filters:
-            branches:
-              only:
-                - master
-                - /tagged-release\/.*/
-                - /run-e2e\/.*/
-          requires:
-            - publish_to_local_registry
       - amplify_e2e_tests_pkg:
           context:
-            - amplify-ecr-image-pull
             - cleanup-resources
             - e2e-auth-credentials
             - e2e-test-context
@@ -791,9 +844,8 @@ workflows:
                 - /run-e2e\/.*/
           requires:
             - build_pkg_binaries
-      - amplify_migration_tests_latest:
+      - amplify_migration_tests_v6:
           context:
-            - amplify-ecr-image-pull
             - e2e-auth-credentials
             - cleanup-resources
             - e2e-test-context
@@ -804,12 +856,11 @@ workflows:
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
           requires:
-            - build
+            - build_pkg_binaries
           # post-steps:
           #   - run: *clean_e2e_resources
-      - amplify_migration_tests_v4:
+      - amplify_migration_tests_v5:
           context:
-            - amplify-ecr-image-pull
             - e2e-auth-credentials
             - cleanup-resources
             - e2e-test-context
@@ -820,28 +871,11 @@ workflows:
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
           requires:
-            - build
-          # post-steps:
-          #   - run: *clean_e2e_resources
-      - amplify_migration_tests_v4_30_0:
-          context:
-            - amplify-ecr-image-pull
-            - e2e-auth-credentials
-            - cleanup-resources
-            - e2e-test-context
-          filters:
-            branches:
-              only:
-                - master
-                - /tagged-release\/.*/
-                - /run-e2e\/.*/
-          requires:
-            - build
+            - build_pkg_binaries
           # post-steps:
           #   - run: *clean_e2e_resources
       - amplify_migration_tests_non_multi_env_layers:
           context:
-            - amplify-ecr-image-pull
             - e2e-auth-credentials
             - cleanup-resources
             - e2e-test-context
@@ -852,12 +886,11 @@ workflows:
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
           requires:
-            - build
+            - build_pkg_binaries
           # post-steps:
           #   - run: *clean_e2e_resources
       - amplify_migration_tests_multi_env_layers:
           context:
-            - amplify-ecr-image-pull
             - e2e-auth-credentials
             - cleanup-resources
             - e2e-test-context
@@ -868,12 +901,11 @@ workflows:
                 - /tagged-release\/.*/
                 - /run-e2e\/.*/
           requires:
-            - build
+            - build_pkg_binaries
           # post-steps:
           #   - run: *clean_e2e_resources
       - amplify_console_integration_tests:
           context:
-            - amplify-ecr-image-pull
             - e2e-auth-credentials
             - cleanup-resources
             - console-e2e-test
@@ -885,8 +917,7 @@ workflows:
               only:
                 - beta
           requires:
-            - build
-            - publish_to_local_registry
+            - build_pkg_binaries
       - github_prerelease:
           context: github-publish
           requires:
@@ -907,31 +938,30 @@ workflows:
             - cleanup-resources
             - e2e-test-context
           requires:
-            - amplify_e2e_tests
             - amplify_e2e_tests_pkg
-            - amplify_migration_tests_latest
-            - amplify_migration_tests_v4
-            - amplify_migration_tests_v4_30_0
+            - amplify_migration_tests_v6
+            - amplify_migration_tests_v5
 
       - deploy:
           context:
-            - amplify-ecr-image-pull
+            - e2e-auth-credentials
+            - e2e-test-context
+            - amplify-s3-upload
             - npm-publish
           requires:
             - test
             - mock_e2e_tests
             - graphql_e2e_tests
             - integration_test
-            - amplify_e2e_tests
             - amplify_e2e_tests_pkg
             - amplify_sudo_install_test
             - amplify_console_integration_tests
-            - amplify_migration_tests_latest
-            - amplify_migration_tests_v4
-            - amplify_migration_tests_v4_30_0
+            - amplify_migration_tests_v6
+            - amplify_migration_tests_v5
             - amplify_migration_tests_non_multi_env_layers
             - amplify_migration_tests_multi_env_layers
             - github_prerelease_install_sanity_check
+            - build_pkg_binaries
           filters:
             branches:
               only:
@@ -955,7 +985,7 @@ commands:
     parameters:
       os:
         type: executor
-        default: linux-e2e-executor
+        default: l
     steps:
       - when:
           condition:
@@ -967,7 +997,7 @@ commands:
                 command: |
                   # rename the command to amplify
                   cd /home/circleci/repo/out
-                  cp amplify-pkg-win.exe amplify.exe
+                  cp amplify-pkg-win-x64.exe amplify.exe
             - run:
                 shell: powershell.exe
                 name: Move to CLI Binary to already existing PATH
@@ -986,7 +1016,7 @@ commands:
                 name: Symlink Amplify packaged CLI
                 command: |
                   cd out
-                  ln -sf amplify-pkg-linux amplify
+                  ln -sf amplify-pkg-linux-x64 amplify
                   echo "export PATH=$AMPLIFY_DIR:$PATH" >> $BASH_ENV
                   source $BASH_ENV
             - run:
@@ -998,41 +1028,22 @@ commands:
     parameters:
       os:
         type: executor
-        default: linux-e2e-executor
+        default: l
     steps:
       - when:
           condition:
             equal: [*windows-e2e-executor, << parameters.os >>]
           steps:
-            - run: nvm install 12.22.5
-            - run: nvm use 12.22.5
-            - run: npm install -g yarn
             - run: yarn --cache-folder ~/.cache/yarn
             - run:
                 shell: powershell.exe
-                command: cp /home/circleci/repo/out/amplify-pkg-win.exe $env:homedrive\$env:homepath\AppData\Local\Microsoft\WindowsApps\amplify.exe
-  install_java:
-    description: 'Install Java on Linux and Docker images'
-    parameters:
-      os:
-        type: executor
-        default: linux-e2e-executor
-    steps:
-      - when:
-          condition:
-            equal: [*linux-e2e-executor, << parameters.os >>]
-          steps:
-            - run:
-                name: Install Java
-                command: |
-                  sudo apt-get update && sudo apt-get install default-jdk
-
+                command: cp /home/circleci/repo/out/amplify-pkg-win-x64.exe $env:homedrive\$env:homepath\AppData\Local\Microsoft\WindowsApps\amplify.exe
   run_e2e_tests:
     description: 'Run Amplify E2E tests'
     parameters:
       os:
         type: executor
-        default: linux-e2e-executor
+        default: l
     steps:
       - when:
           condition:
@@ -1040,10 +1051,11 @@ commands:
           steps:
             - run:
                 name: Run E2e Tests
-                shell: powershell.exe
+                shell: bash.exe
                 command: |
+                  source .circleci/local_publish_helpers.sh
                   cd packages/amplify-e2e-tests
-                  yarn run e2e --detectOpenHandles --maxWorkers=3 $env:TEST_SUITE
+                  retry yarn run e2e --detectOpenHandles --maxWorkers=3 $TEST_SUITE
                 no_output_timeout: 90m
       - when:
           condition:
@@ -1062,10 +1074,11 @@ commands:
     parameters:
       os:
         type: executor
-        default: linux-e2e-executor
+        default: l
     steps:
       - run:
           name: Scan E2E artifacts
+          no_output_timeout: 90m
           command: |
             if ! yarn ts-node .circleci/scan_artifacts.ts; then
               echo "Cleaning the repository"
@@ -1078,7 +1091,7 @@ commands:
     parameters:
       os:
         type: executor
-        default: linux-e2e-executor
+        default: l
     steps:
       - run:
           name: Clean job resources
