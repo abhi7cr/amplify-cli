@@ -1,7 +1,7 @@
-import { getAppSyncApiConfig, getApiKeyConfig, apiKeyIsActive, hasApiKey } from '../../utils/api-key-helpers';
+import { getAppSyncApiConfig, getApiKeyConfig, apiKeyIsActive } from '../../utils/api-key-helpers';
 
-jest.mock('amplify-cli-core', () => {
-  const original = jest.requireActual('amplify-cli-core');
+jest.mock('@aws-amplify/amplify-cli-core', () => {
+  const original = jest.requireActual('@aws-amplify/amplify-cli-core');
   const amplifyMeta = {
     api: {
       myapp: {
@@ -78,14 +78,6 @@ describe('apiKeyIsActive', () => {
   describe('with expired key', () => {
     it('returns false', () => {
       expect(apiKeyIsActive()).toBe(false);
-    });
-  });
-});
-
-describe('hasApiKey', () => {
-  describe('if api key config is present', () => {
-    it('returns true if api key is present', () => {
-      expect(hasApiKey()).toBe(true);
     });
   });
 });

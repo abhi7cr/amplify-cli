@@ -1,8 +1,44 @@
-describe('amplify status: ', () => {
+import { stateManager, pathManager } from '@aws-amplify/amplify-cli-core';
+import { showApiAuthAcm } from '@aws-amplify/amplify-category-api';
+
+jest.mock('@aws-amplify/amplify-category-hosting');
+jest.mock('@aws-amplify/amplify-cli-core');
+jest.mock('@aws-amplify/amplify-category-api', () => ({
+  showApiAuthAcm: jest.fn(async () => ''),
+}));
+
+const pathManagerMock = pathManager as jest.Mocked<typeof pathManager>;
+pathManagerMock.getBackendDirPath.mockReturnValue('testBackendDirPath');
+
+const testApiName = 'testApiName';
+const mockGraphQLAPIMeta = {
+  providers: {
+    awscloudformation: {
+      Region: 'myMockRegion',
+    },
+  },
+  api: {
+    [testApiName]: {
+      service: 'AppSync',
+    },
+  },
+};
+
+const stateManagerMock = stateManager as jest.Mocked<typeof stateManager>;
+stateManagerMock.getMeta = jest.fn().mockImplementation(() => mockGraphQLAPIMeta);
+
+const showApiAuthAcmMock = showApiAuthAcm as jest.MockedFunction<typeof showApiAuthAcm>;
+
+describe('amplify status:', () => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
   const { run } = require('../../commands/status');
   const runStatusCmd = run;
   const statusPluginInfo = `${process.cwd()}/../amplify-console-hosting`;
-  const mockPath = './';
+  const mockPath = './help';
+
+  afterAll(() => {
+    jest.clearAllMocks();
+  });
 
   it('status run method should exist', () => {
     expect(runStatusCmd).toBeDefined();
@@ -15,6 +51,7 @@ describe('amplify status: ', () => {
         showGlobalSandboxModeWarning: jest.fn(),
         showHelpfulProviderLinks: jest.fn(),
         getCategoryPluginInfo: jest.fn().mockReturnValue({ packageLocation: mockPath }),
+        pathManager: pathManagerMock,
       },
       parameters: {
         input: {
@@ -37,6 +74,7 @@ describe('amplify status: ', () => {
         showGlobalSandboxModeWarning: jest.fn(),
         showHelpfulProviderLinks: jest.fn(),
         getCategoryPluginInfo: jest.fn().mockReturnValue({ packageLocation: statusPluginInfo }),
+        pathManager: pathManagerMock,
       },
       input: {
         command: 'status',
@@ -56,6 +94,7 @@ describe('amplify status: ', () => {
         showGlobalSandboxModeWarning: jest.fn(),
         showHelpfulProviderLinks: jest.fn(),
         getCategoryPluginInfo: jest.fn().mockReturnValue({ packageLocation: statusPluginInfo }),
+        pathManager: pathManagerMock,
       },
       input: {
         command: 'status',
@@ -78,6 +117,7 @@ describe('amplify status: ', () => {
         showGlobalSandboxModeWarning: jest.fn(),
         showHelpfulProviderLinks: jest.fn(),
         getCategoryPluginInfo: jest.fn().mockReturnValue({ packageLocation: statusPluginInfo }),
+        pathManager: pathManagerMock,
       },
       input: {
         command: 'status',
@@ -85,7 +125,34 @@ describe('amplify status: ', () => {
       },
     };
     runStatusCmd(mockContextWithHelpSubcommandAndCLArgs);
-    //TBD: to move ViewResourceTableParams into a separate file for mocking instance functions.
     expect(mockContextWithHelpSubcommandAndCLArgs.amplify.showStatusTable.mock.calls.length).toBe(0);
+  });
+
+  it('status api -acm Table run method should call showApiAuthAcm', async () => {
+    const mockContextWithVerboseOptionAndCLArgs = {
+      amplify: {
+        getProviderPlugins: jest.fn().mockReturnValue({ awscloudformation: '../../__mocks__/faked-plugin' }),
+        showStatusTable: jest.fn(),
+        showGlobalSandboxModeWarning: jest.fn(),
+        showHelpfulProviderLinks: jest.fn(),
+        getCategoryPluginInfo: jest.fn().mockReturnValue({ packageLocation: statusPluginInfo }),
+        pathManager: pathManagerMock,
+      },
+      input: {
+        command: 'status',
+        options: {
+          verbose: true,
+          api: true,
+          acm: 'Team',
+        },
+      },
+    };
+
+    jest.mock('../../../__mocks__/faked-plugin', () => ({
+      compileSchema: jest.fn().mockReturnValue(Promise.resolve({})),
+    }));
+
+    await runStatusCmd(mockContextWithVerboseOptionAndCLArgs);
+    expect(showApiAuthAcmMock.mock.calls.length).toBeGreaterThan(0);
   });
 });

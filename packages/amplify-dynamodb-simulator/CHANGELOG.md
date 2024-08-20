@@ -3,6 +3,553 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [2.9.19](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.18...amplify-dynamodb-simulator@2.9.19) (2024-08-02)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.18](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.17...amplify-dynamodb-simulator@2.9.18) (2024-06-27)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.17](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.16...amplify-dynamodb-simulator@2.9.17) (2024-06-20)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.16](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.15...amplify-dynamodb-simulator@2.9.16) (2024-06-06)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.15](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.14...amplify-dynamodb-simulator@2.9.15) (2024-05-24)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.14](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.13...amplify-dynamodb-simulator@2.9.14) (2024-05-07)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.13](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.12...amplify-dynamodb-simulator@2.9.13) (2024-04-18)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.12](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.11...amplify-dynamodb-simulator@2.9.12) (2024-04-15)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.11](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.10...amplify-dynamodb-simulator@2.9.11) (2024-03-29)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.10](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.9...amplify-dynamodb-simulator@2.9.10) (2024-03-06)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.9](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.8...amplify-dynamodb-simulator@2.9.9) (2023-12-11)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.8](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.6...amplify-dynamodb-simulator@2.9.8) (2023-11-08)
+
+
+### Bug Fixes
+
+* bump versions after unsuccessful release ([#13395](https://github.com/aws-amplify/amplify-cli/issues/13395)) ([7f43363](https://github.com/aws-amplify/amplify-cli/commit/7f433637b052d6dd33fcbf87f390a6b85e9de5b7))
+
+
+
+
+
+## [2.9.7](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.6...amplify-dynamodb-simulator@2.9.7) (2023-11-08)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.6](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.5...amplify-dynamodb-simulator@2.9.6) (2023-11-08)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.5](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.4...amplify-dynamodb-simulator@2.9.5) (2023-10-12)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.3...amplify-dynamodb-simulator@2.9.4) (2023-10-05)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.2...amplify-dynamodb-simulator@2.9.3) (2023-10-03)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.1...amplify-dynamodb-simulator@2.9.2) (2023-09-22)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.9.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.9.0...amplify-dynamodb-simulator@2.9.1) (2023-08-31)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.9.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.8.4...amplify-dynamodb-simulator@2.9.0) (2023-08-17)
+
+
+### Features
+
+* generate components using graphql ([1568581](https://github.com/aws-amplify/amplify-cli/commit/15685810460881aa71e88724398b9be05ba53781))
+
+
+
+
+
+## [2.8.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.8.3...amplify-dynamodb-simulator@2.8.4) (2023-08-09)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.8.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.8.2...amplify-dynamodb-simulator@2.8.3) (2023-07-28)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.8.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.8.1...amplify-dynamodb-simulator@2.8.2) (2023-07-27)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.8.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.8.0...amplify-dynamodb-simulator@2.8.1) (2023-07-24)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.8.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.7.4...amplify-dynamodb-simulator@2.8.0) (2023-07-20)
+
+
+### Features
+
+* uibuilder codegen service ([#12896](https://github.com/aws-amplify/amplify-cli/issues/12896)) ([3fe2f98](https://github.com/aws-amplify/amplify-cli/commit/3fe2f98a99a9daf22efccb23a031882ea2be899b))
+
+
+
+
+
+## [2.7.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.7.3...amplify-dynamodb-simulator@2.7.4) (2023-06-13)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.7.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.7.1...amplify-dynamodb-simulator@2.7.3) (2023-05-25)
+
+
+### Bug Fixes
+
+* version bump ([f820824](https://github.com/aws-amplify/amplify-cli/commit/f82082416187bd1dd33de9f7b35753026ac17eea))
+
+
+
+
+
+## [2.7.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.7.0...amplify-dynamodb-simulator@2.7.2) (2023-05-25)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.7.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.7.0...amplify-dynamodb-simulator@2.7.1) (2023-05-25)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.7.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.6.0...amplify-dynamodb-simulator@2.7.0) (2023-05-11)
+
+
+### Features
+
+* **amplify-util-uibuilder:** support StorageField ([#12386](https://github.com/aws-amplify/amplify-cli/issues/12386)) ([f158f10](https://github.com/aws-amplify/amplify-cli/commit/f158f102059ae90cced25560b04887b7df2eb246))
+
+
+
+
+
+# [2.6.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.12...amplify-dynamodb-simulator@2.6.0) (2023-04-24)
+
+
+### Features
+
+* **amplify-util-uibuilder:** support StorageField ([#12386](https://github.com/aws-amplify/amplify-cli/issues/12386)) ([90fe1e4](https://github.com/aws-amplify/amplify-cli/commit/90fe1e4574c52eb4cacd110d50310f55bf913214))
+
+
+
+
+
+## [2.5.12](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.10...amplify-dynamodb-simulator@2.5.12) (2023-04-14)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.10](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.10-rc.e9e0d157d.0...amplify-dynamodb-simulator@2.5.10) (2023-03-23)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.10-rc.e9e0d157d.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.9...amplify-dynamodb-simulator@2.5.10-rc.e9e0d157d.0) (2023-03-17)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.9](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.8...amplify-dynamodb-simulator@2.5.9) (2023-03-13)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.8](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.7...amplify-dynamodb-simulator@2.5.8) (2023-02-28)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.7](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.6...amplify-dynamodb-simulator@2.5.7) (2023-02-27)
+
+
+### Bug Fixes
+
+* moved opensearch, dynamodb, and storage simulator tests to e2e tests ([#11876](https://github.com/aws-amplify/amplify-cli/issues/11876)) ([116a50c](https://github.com/aws-amplify/amplify-cli/commit/116a50c3a385ebe06a9b50b5c8fbce78ab67d147))
+
+
+
+
+
+## [2.5.6](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.5...amplify-dynamodb-simulator@2.5.6) (2023-02-16)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.5](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.4...amplify-dynamodb-simulator@2.5.5) (2023-02-06)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.5.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.3...amplify-dynamodb-simulator@2.5.4) (2023-02-02)
+
+
+### Bug Fixes
+
+* @typescript-eslint/no-floating-promises ([#11665](https://github.com/aws-amplify/amplify-cli/issues/11665)) ([6c64717](https://github.com/aws-amplify/amplify-cli/commit/6c647177a3518d777677757bebc01f18b71552e3))
+* test timeouts on simulator tests ([#11804](https://github.com/aws-amplify/amplify-cli/issues/11804)) ([d9dfa40](https://github.com/aws-amplify/amplify-cli/commit/d9dfa40747c1b71eaa1c9e885dddc0b64f8c73d0))
+
+
+### Reverts
+
+* Revert "chore: fixing main to dev merge conflicts (#11696)" ([00fec46](https://github.com/aws-amplify/amplify-cli/commit/00fec4608096390b5ae2563b5c69453cd48bfa45)), closes [#11696](https://github.com/aws-amplify/amplify-cli/issues/11696)
+
+
+
+
+
+## [2.5.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.2...amplify-dynamodb-simulator@2.5.3) (2023-01-17)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-beta.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.1...amplify-dynamodb-simulator@2.5.0-beta.3) (2022-12-13)
+## [2.5.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.1...amplify-dynamodb-simulator@2.5.2) (2023-01-03)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-beta.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.1...amplify-dynamodb-simulator@2.5.0-beta.2) (2022-12-01)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-beta.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.0-beta.0...amplify-dynamodb-simulator@2.5.0-beta.1) (2022-11-19)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-beta.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.0-cdkv2.0...amplify-dynamodb-simulator@2.5.0-beta.0) (2022-11-17)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-cdkv2.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.0-cdkv2.0...amplify-dynamodb-simulator@2.5.0-cdkv2.2) (2022-11-10)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-cdkv2.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.0-cdkv2.0...amplify-dynamodb-simulator@2.5.0-cdkv2.1) (2022-11-10)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0-cdkv2.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.4.3...amplify-dynamodb-simulator@2.5.0-cdkv2.0) (2022-11-01)
+## [2.5.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.5.0...amplify-dynamodb-simulator@2.5.1) (2022-11-17)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+# [2.5.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.4.3...amplify-dynamodb-simulator@2.5.0) (2022-10-27)
+
+
+### Features
+
+* **amplify-util-uibuilder:** add studio forms ([#11165](https://github.com/aws-amplify/amplify-cli/issues/11165)) ([6f15294](https://github.com/aws-amplify/amplify-cli/commit/6f15294d6809639c7d7e7d3aa4378df894168b0b))
+
+
+
+
+
+## [2.4.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.4.2...amplify-dynamodb-simulator@2.4.3) (2022-10-13)
+
+
+### Bug Fixes
+
+* updateUserAttributeSetting during add/update/push flows ([#10773](https://github.com/aws-amplify/amplify-cli/issues/10773)) ([52c1e49](https://github.com/aws-amplify/amplify-cli/commit/52c1e49caa5098c37c32c9f2b6f095cfd60454b1))
+
+
+
+
+
+## [2.4.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.4.1...amplify-dynamodb-simulator@2.4.2) (2022-10-03)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.4.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.7...amplify-dynamodb-simulator@2.4.1) (2022-09-21)
+
+
+### Bug Fixes
+
+* account for extra lines when detecting known dynamodb simulator errors ([#10962](https://github.com/aws-amplify/amplify-cli/issues/10962)) ([023fb97](https://github.com/aws-amplify/amplify-cli/commit/023fb975a3e43525e65f1ee0bd1a7ddbf5ed7da8))
+
+
+
+
+
+## [2.3.7](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.7-rc.224a2e0e4.0...amplify-dynamodb-simulator@2.3.7) (2022-09-06)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.7-rc.224a2e0e4.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.6...amplify-dynamodb-simulator@2.3.7-rc.224a2e0e4.0) (2022-08-15)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.6](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.4...amplify-dynamodb-simulator@2.3.6) (2022-08-02)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.5](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.4...amplify-dynamodb-simulator@2.3.5) (2022-06-30)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.3...amplify-dynamodb-simulator@2.3.4) (2022-06-22)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.2...amplify-dynamodb-simulator@2.3.3) (2022-06-13)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.1...amplify-dynamodb-simulator@2.3.2) (2022-06-03)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
+## [2.3.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.3.0...amplify-dynamodb-simulator@2.3.1) (2022-05-27)
+
+
+
+## 8.3.1 (2022-05-27)
+
+
+### Reverts
+
+* oauth parameter store change ([#10485](https://github.com/aws-amplify/amplify-cli/issues/10485)) ([896b518](https://github.com/aws-amplify/amplify-cli/commit/896b51833e30daf9997d38c9229ca237ab7deda1))
+
+
+
+
+
+# [2.3.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.2.29...amplify-dynamodb-simulator@2.3.0) (2022-05-24)
+
+
+### Features
+
+* move oauth secrets to parameter store ([#10413](https://github.com/aws-amplify/amplify-cli/issues/10413)) ([16db2ce](https://github.com/aws-amplify/amplify-cli/commit/16db2ceb5da4e02e90e6b0bc1bb27412fd765b50))
+
+
+
+
+
+## [2.2.29](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.2.28...amplify-dynamodb-simulator@2.2.29) (2022-05-10)
+
+**Note:** Version bump only for package amplify-dynamodb-simulator
+
+
+
+
+
 ## [2.2.28](https://github.com/aws-amplify/amplify-cli/compare/amplify-dynamodb-simulator@2.2.27...amplify-dynamodb-simulator@2.2.28) (2022-04-29)
 
 **Note:** Version bump only for package amplify-dynamodb-simulator

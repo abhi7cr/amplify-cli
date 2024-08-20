@@ -1,11 +1,13 @@
-import { $TSContext, JSONUtilities, pathManager } from 'amplify-cli-core';
-import { DeploymentOp, DeploymentStep, DEPLOYMENT_META } from '../iterative-deployment';
-import { DiffChanges, DiffableProject, getGQLDiff } from './utils';
+import {
+  $TSAny,
+  $TSContext,
+  AmplifyError,
+  AmplifyFault,
+  AMPLIFY_SUPPORT_DOCS,
+  JSONUtilities,
+  pathManager,
+} from '@aws-amplify/amplify-cli-core';
 import { DynamoDB, Template } from 'cloudform-types';
-import { GSIChange, getGSIDiffs } from './gsi-diff-helpers';
-import { GSIRecord, TemplateState, getPreviousDeploymentRecord, getTableNames } from '../utils/amplify-resource-state-utils';
-import { ROOT_APPSYNC_S3_KEY, hashDirectory } from '../upload-appsync-files';
-import { addGSI, getGSIDetails, removeGSI } from './dynamodb-gsi-helpers';
 import {
   cantAddAndRemoveGSIAtSameTimeRule,
   cantBatchMutateGSIAtUpdateTimeRule,
@@ -13,70 +15,101 @@ import {
   cantHaveMoreThan500ResourcesRule,
   sanityCheckDiffs,
 } from 'graphql-transformer-core';
-
 import { CloudFormation } from 'aws-sdk';
 import { Diff } from 'deep-diff';
 import _ from 'lodash';
-import { loadConfiguration } from '../configuration-manager';
 import fs from 'fs-extra';
 import path from 'path';
+import { DeploymentOp, DeploymentStep, DEPLOYMENT_META } from '../iterative-deployment';
+import { DiffChanges, DiffableProject, getGQLDiff } from './utils';
+import { GSIChange, getGSIDiffs } from './gsi-diff-helpers';
+import { GSIRecord, TemplateState, getPreviousDeploymentRecord, getTableNames } from '../utils/amplify-resource-state-utils';
+import { ROOT_APPSYNC_S3_KEY, hashDirectory } from '../upload-appsync-files';
+import { addGSI, getGSIDetails, removeGSI } from './dynamodb-gsi-helpers';
 
+import { loadConfiguration } from '../configuration-manager';
+
+export const DISABLE_GSI_LIMIT_CHECK_OPTION = 'disable-gsi-limit-check';
+
+const ROOT_LEVEL = 'root';
+const RESERVED_ROOT_STACK_TEMPLATE_STATE_KEY_NAME = '_root';
+const CONNECTION_STACK_NAME = 'ConnectionStack';
+const SEARCHABLE_STACK_NAME = 'SearchableStack';
+
+/**
+ * Type for GQLResourceManagerProps
+ */
 export type GQLResourceManagerProps = {
   cfnClient: CloudFormation;
   resourceMeta?: ResourceMeta;
   backendDir: string;
   cloudBackendDir: string;
   rebuildAllTables?: boolean;
+  disableGSILimitCheck?: boolean;
 };
 
+/**
+ * Type for ResourceMeta
+ */
 export type ResourceMeta = {
   category: string;
   providerPlugin: string;
   resourceName: string;
   service: string;
-  output: any;
+  output: $TSAny;
   providerMetadata: {
     s3TemplateURL: string;
     logicalId: string;
   };
   stackId: string;
   DeploymentBucketName: string;
-  [key: string]: any;
+  [key: string]: $TSAny;
 };
 
 // TODO: Add unit testing
+/**
+ * Type for GraphQLResourceManager
+ */
 export class GraphQLResourceManager {
-  static serviceName: string = 'AppSync';
-  static categoryName: string = 'api';
+  static serviceName = 'AppSync';
+  static categoryName = 'api';
   private cfnClient: CloudFormation;
   private resourceMeta: ResourceMeta;
   private cloudBackendApiProjectRoot: string;
   private backendApiProjectRoot: string;
   private templateState: TemplateState;
-  private rebuildAllTables: boolean = false; // indicates that all underlying model tables should be rebuilt
+  private rebuildAllTables = false; // indicates that all underlying model tables should be rebuilt
+  private readonly disableGSILimitCheck;
 
-  public static createInstance = async (context: $TSContext, gqlResource: any, StackId: string, rebuildAllTables: boolean = false) => {
-    try {
-      const cred = await loadConfiguration(context);
-      const cfn = new CloudFormation(cred);
-      const apiStack = await cfn
-        .describeStackResources({ StackName: StackId, LogicalResourceId: gqlResource.providerMetadata.logicalId })
-        .promise();
-      return new GraphQLResourceManager({
-        cfnClient: cfn,
-        resourceMeta: { ...gqlResource, stackId: apiStack.StackResources[0].PhysicalResourceId },
-        backendDir: pathManager.getBackendDirPath(),
-        cloudBackendDir: pathManager.getCurrentCloudBackendDirPath(),
-        rebuildAllTables,
-      });
-    } catch (err) {
-      throw err;
-    }
+  public static createInstance = async (
+    context: $TSContext,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gqlResource: any,
+    StackId: string,
+    rebuildAllTables = false,
+  ): Promise<GraphQLResourceManager> => {
+    const cred = await loadConfiguration(context);
+    const cfn = new CloudFormation(cred);
+    const apiStack = await cfn
+      .describeStackResources({ StackName: StackId, LogicalResourceId: gqlResource.providerMetadata.logicalId })
+      .promise();
+
+    return new GraphQLResourceManager({
+      cfnClient: cfn,
+      resourceMeta: { ...gqlResource, stackId: apiStack.StackResources[0].PhysicalResourceId },
+      backendDir: pathManager.getBackendDirPath(),
+      cloudBackendDir: pathManager.getCurrentCloudBackendDirPath(),
+      rebuildAllTables,
+      disableGSILimitCheck: context?.input?.options?.[DISABLE_GSI_LIMIT_CHECK_OPTION],
+    });
   };
 
   constructor(props: GQLResourceManagerProps) {
     if (!props.resourceMeta) {
-      throw Error('No GraphQL API enabled.');
+      throw new AmplifyError('CategoryNotEnabledError', {
+        message: 'No GraphQL API enabled.',
+        link: AMPLIFY_SUPPORT_DOCS.CLI_GRAPHQL_TROUBLESHOOTING.url,
+      });
     }
 
     this.cfnClient = props.cfnClient;
@@ -86,6 +119,7 @@ export class GraphQLResourceManager {
     this.cloudBackendApiProjectRoot = path.join(props.cloudBackendDir, GraphQLResourceManager.categoryName, this.resourceMeta.resourceName);
     this.templateState = new TemplateState();
     this.rebuildAllTables = props.rebuildAllTables || false;
+    this.disableGSILimitCheck = props.disableGSILimitCheck || false;
   }
 
   run = async (): Promise<DeploymentStep[]> => {
@@ -103,13 +137,21 @@ export class GraphQLResourceManager {
       sanityCheckDiffs(gqlDiff.diff, gqlDiff.current, gqlDiff.next, diffRules, projectRules);
     } catch (err) {
       if (err.name !== 'InvalidGSIMigrationError') {
-        throw err;
+        throw new AmplifyFault(
+          'UnknownFault',
+          {
+            message: err.message,
+            link: AMPLIFY_SUPPORT_DOCS.CLI_GRAPHQL_TROUBLESHOOTING.url,
+          },
+          err,
+        );
       }
     }
     if (!this.rebuildAllTables) {
       this.gsiManagement(gqlDiff.diff, gqlDiff.current, gqlDiff.next);
     }
     this.tableRecreationManagement(gqlDiff.current);
+    // eslint-disable-next-line no-return-await
     return await this.getDeploymentSteps();
   };
 
@@ -133,7 +175,7 @@ export class GraphQLResourceManager {
     // copy the last deployment state as current state
     let previousStepPath = cloudBuildDir;
     let previousStep: DeploymentOp = await this.getCurrentlyDeployedStackStep();
-    let previousMetaKey = previousStep.previousMetaKey;
+    let { previousMetaKey } = previousStep;
 
     while (!this.templateState.isEmpty()) {
       const stepNumber = count.toString().padStart(2, '0');
@@ -142,22 +184,32 @@ export class GraphQLResourceManager {
       fs.copySync(previousStepPath, stepPath);
       previousStepPath = stepPath;
 
-      const tables = this.templateState.getKeys();
+      const nestedStacks = this.templateState.getKeys().filter((k) => k !== RESERVED_ROOT_STACK_TEMPLATE_STATE_KEY_NAME);
       const tableNames = [];
-      tables.forEach(tableName => {
-        tableNames.push(tableNameMap.get(tableName));
-        const tableNameStackFilePath = path.join(stepPath, 'stacks', `${tableName}.json`);
-        fs.ensureDirSync(path.dirname(tableNameStackFilePath));
-        JSONUtilities.writeJson(tableNameStackFilePath, this.templateState.pop(tableName));
+      nestedStacks.forEach((stackName) => {
+        if (stackName !== CONNECTION_STACK_NAME && stackName !== SEARCHABLE_STACK_NAME) {
+          // Connection stack is not provisioning dynamoDB table and need to be filtered
+          tableNames.push(tableNameMap.get(stackName));
+        }
+        const nestedStackFilePath = path.join(stepPath, 'stacks', `${stackName}.json`);
+        fs.ensureDirSync(path.dirname(nestedStackFilePath));
+        JSONUtilities.writeJson(nestedStackFilePath, this.templateState.pop(stackName));
       });
+
+      // Update the root stack template when it is changed in template state
+      if (this.templateState.has(RESERVED_ROOT_STACK_TEMPLATE_STATE_KEY_NAME)) {
+        const rootStackFilePath = path.join(stepPath, 'cloudformation-template.json');
+        fs.ensureDirSync(path.dirname(rootStackFilePath));
+        JSONUtilities.writeJson(rootStackFilePath, this.templateState.pop(RESERVED_ROOT_STACK_TEMPLATE_STATE_KEY_NAME));
+      }
 
       const deploymentRootKey = `${ROOT_APPSYNC_S3_KEY}/${buildHash}/states/${stepNumber}`;
       const deploymentStep: DeploymentOp = {
         stackTemplatePathOrUrl: `${deploymentRootKey}/cloudformation-template.json`,
-        previousMetaKey: previousMetaKey,
+        previousMetaKey,
         parameters: { ...parameters, S3DeploymentRootKey: deploymentRootKey },
         stackName: this.resourceMeta.stackId,
-        tableNames: tableNames,
+        tableNames,
         capabilities,
         // clientRequestToken: `${buildHash}-step-${stepNumber}`,
       };
@@ -179,7 +231,7 @@ export class GraphQLResourceManager {
   };
 
   /**
-   * get a copy of last deployed API nested stack to rollback to incase deployment fails
+   * get a copy of last deployed API nested stack to rollback to in case deployment fails
    */
   public getCurrentlyDeployedStackStep = async (): Promise<DeploymentOp> => {
     const cloudBuildDir = path.join(this.cloudBackendApiProjectRoot, 'build');
@@ -218,15 +270,13 @@ export class GraphQLResourceManager {
     return `${ROOT_APPSYNC_S3_KEY}/${buildHash}/states`;
   };
 
-  private gsiManagement = (diffs: DiffChanges<DiffableProject>, currentState: DiffableProject, nextState: DiffableProject) => {
-    const gsiChanges = _.filter(diffs, diff => {
-      return diff.path.includes('GlobalSecondaryIndexes');
-    });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private gsiManagement = (diffs: DiffChanges, currentState: DiffableProject, nextState: DiffableProject): any => {
+    const gsiChanges = _.filter(diffs, (diff) => diff.path.includes('GlobalSecondaryIndexes'));
 
-    const tableWithGSIChanges = _.uniqBy(gsiChanges, diff => diff.path?.slice(0, 3).join('/')).map(gsiChange => {
-      const tableName = gsiChange.path[3] as string;
-
-      const stackName = gsiChange.path[1].split('.')[0] as string;
+    const tableWithGSIChanges = _.uniqBy(gsiChanges, (diff) => diff.path?.slice(0, 3).join('/')).map((gsiChange) => {
+      const tableName = (gsiChange.path[0] === ROOT_LEVEL ? gsiChange.path[2] : gsiChange.path[3]) as string;
+      const stackName = (gsiChange.path[0] === ROOT_LEVEL ? ROOT_LEVEL : gsiChange.path[1].split('.')[0]) as string;
 
       const currentTable = this.getTable(gsiChange, currentState);
       const nextTable = this.getTable(gsiChange, nextState);
@@ -241,8 +291,12 @@ export class GraphQLResourceManager {
 
     for (const gsiChange of tableWithGSIChanges) {
       const changeSteps = getGSIDiffs(gsiChange.currentTable, gsiChange.nextTable);
-      const stackName = gsiChange.stackName;
-      const tableName = gsiChange.tableName;
+      const { stackName } = gsiChange;
+      const { tableName } = gsiChange;
+      if (stackName === ROOT_LEVEL) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
       for (const changeStep of changeSteps) {
         const ddbResource = this.templateState.getLatest(stackName) || this.getStack(stackName, currentState);
         let gsiRecord;
@@ -267,65 +321,131 @@ export class GraphQLResourceManager {
             break;
 
           default:
-            assertUnreachable(changeStep.type);
+            throw new AmplifyFault('UnknownFault', {
+              message: `Unknown GSI change type ${changeStep.type}`,
+              link: AMPLIFY_SUPPORT_DOCS.CLI_GRAPHQL_TROUBLESHOOTING.url,
+            });
         }
       }
     }
   };
 
   private tableRecreationManagement = (currentState: DiffableProject) => {
-    this.getTablesBeingReplaced().forEach(tableMeta => {
+    const recreatedTables = this.getTablesBeingReplaced();
+    recreatedTables.forEach((tableMeta) => {
       const ddbStack = this.getStack(tableMeta.stackName, currentState);
       this.dropTemplateResources(ddbStack);
-
-      // clear any other states created by GSI updates as dropping and recreating supercedes those changes
+      // clear any other states created by GSI updates as dropping and recreating supersedes those changes
       this.clearTemplateState(tableMeta.stackName);
       this.templateState.add(tableMeta.stackName, JSONUtilities.stringify(ddbStack));
     });
+
+    /**
+     * When rebuild api, the root stack needs to change the reference to nested stack output values to temporary null placeholder value
+     * as there will be no output from nested stacks.
+     */
+    if (this.rebuildAllTables) {
+      const rootStack = this.getStack(ROOT_LEVEL, currentState);
+      const connectionStack = this.getStack(CONNECTION_STACK_NAME, currentState);
+      const searchableStack = this.getStack(SEARCHABLE_STACK_NAME, currentState);
+      const allRecreatedNestedStackNames = recreatedTables.map((tableMeta) => tableMeta.stackName);
+      // Drop resources and outputs for connection stack if existed
+      if (connectionStack) {
+        allRecreatedNestedStackNames.push(CONNECTION_STACK_NAME);
+        this.dropTemplateResources(connectionStack);
+        this.templateState.add(CONNECTION_STACK_NAME, JSONUtilities.stringify(connectionStack));
+      }
+      // Drop resources and outputs for searchable stack if existed
+      if (searchableStack) {
+        allRecreatedNestedStackNames.push(SEARCHABLE_STACK_NAME);
+        this.dropTemplateResourcesForSearchableStack(searchableStack);
+        this.templateState.add(SEARCHABLE_STACK_NAME, JSONUtilities.stringify(searchableStack));
+      }
+      // Update nested stack params in root stack
+      this.replaceRecreatedNestedStackParamsInRootStackTemplate(allRecreatedNestedStackNames, rootStack);
+      this.templateState.add(RESERVED_ROOT_STACK_TEMPLATE_STATE_KEY_NAME, JSONUtilities.stringify(rootStack));
+    }
   };
 
-  getTablesBeingReplaced = () => {
+  /**
+   * Set recreated nested stack parameters to 'TemporaryPlaceholderValue' in root stack template
+   * @param recreatedNestedStackNames names of recreated stacks
+   * @param rootStack root stack template
+   */
+  private replaceRecreatedNestedStackParamsInRootStackTemplate(recreatedNestedStackNames: string[], rootStack: Template) {
+    recreatedNestedStackNames.forEach((stackName) => {
+      const stackParamsMap = rootStack.Resources[stackName].Properties.Parameters;
+      Object.keys(stackParamsMap).forEach((stackParamKey) => {
+        const paramObj = stackParamsMap[stackParamKey];
+        const paramObjKeys = Object.keys(paramObj);
+        if (paramObjKeys.length === 1 && paramObjKeys[0] === 'Fn::GetAtt') {
+          const paramObjValue = paramObj[paramObjKeys[0]];
+          if (
+            Array.isArray(paramObjValue) &&
+            paramObjValue.length === 2 &&
+            recreatedNestedStackNames.includes(paramObjValue[0]) &&
+            paramObjValue[1].startsWith('Outputs.')
+          ) {
+            stackParamsMap[stackParamKey] = 'TemporaryPlaceholderValue';
+          }
+        }
+      });
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getTablesBeingReplaced = (): any => {
     const gqlDiff = getGQLDiff(this.backendApiProjectRoot, this.cloudBackendApiProjectRoot);
     const [diffs, currentState] = [gqlDiff.diff, gqlDiff.current];
-    const getTablesRequiringReplacement = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getTablesRequiringReplacement = (): any => {
       if (!diffs) {
         return [];
       }
       return _.uniq(
         diffs
           // diff.path looks like [ "stacks", "ModelName.json", "Resources", "TableName", "Properties", "KeySchema", 0, "AttributeName"]
-          .filter(
-            diff =>
-              (diff.kind === 'E' && diff.path.length === 8 && diff.path[5] === 'KeySchema') || diff.path.includes('LocalSecondaryIndexes'),
-          ) // filter diffs with changes that require replacement
-          .map(diff => ({
+          .filter((diff) => {
+            const keySchemaModified = diff.kind === 'E' && diff.path.length === 8 && diff.path[5] === 'KeySchema';
+            const sortKeyAddedOrRemoved = diff.kind === 'A' && diff.path.length === 6 && diff.path[5] === 'KeySchema' && diff.index === 1;
+            const localSecondaryIndexModified = diff.path.some((pathEntry) => pathEntry === 'LocalSecondaryIndexes');
+            return keySchemaModified || sortKeyAddedOrRemoved || localSecondaryIndexModified;
+          }) // filter diffs with changes that require replacement
+          .map((diff) => ({
             // extract table name and stack name from diff path
             tableName: diff.path?.[3] as string,
             stackName: diff.path[1].split('.')[0] as string,
           })),
       ) as { tableName: string; stackName: string }[];
     };
-    const getAllTables = () =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getAllTables = (): any =>
       Object.entries(currentState.stacks)
         .map(([name, template]) => ({
           tableName: this.getTableNameFromTemplate(template),
           stackName: path.basename(name, '.json'),
         }))
-        .filter(meta => !!meta.tableName);
+        .filter((meta) => !!meta.tableName);
     return this.rebuildAllTables ? getAllTables() : getTablesRequiringReplacement();
   };
 
   private getTable = (gsiChange: Diff<any, any>, proj: DiffableProject): DynamoDB.Table => {
+    if (gsiChange.path[0] === ROOT_LEVEL) {
+      return proj.root.Resources[gsiChange.path[2]] as DynamoDB.Table;
+    }
     return proj.stacks[gsiChange.path[1]].Resources[gsiChange.path[3]] as DynamoDB.Table;
   };
 
-  private getStack(stackName: string, proj: DiffableProject): Template {
+  private getStack = (stackName: string, proj: DiffableProject): Template => {
+    if (stackName === ROOT_LEVEL) {
+      return proj.root;
+    }
     return proj.stacks[`${stackName}.json`];
-  }
+  };
 
   private addGSI = (gsiRecord: GSIRecord, tableName: string, template: Template): void => {
     const table = template.Resources[tableName] as DynamoDB.Table;
-    template.Resources[tableName] = addGSI(gsiRecord, table);
+    template.Resources[tableName] = addGSI(gsiRecord, table, this.disableGSILimitCheck);
   };
 
   private deleteGSI = (indexName: string, tableName: string, template: Template): void => {
@@ -342,6 +462,18 @@ export class GraphQLResourceManager {
     template.Outputs = {};
   };
 
+  /**
+   * Remove all outputs and resources except for search domain for searchable stack
+   * @param template stack CFN tempalte
+   */
+  private dropTemplateResourcesForSearchableStack = (template: Template): void => {
+    const OpenSearchDomainLogicalID = 'OpenSearchDomain';
+    const searchDomain = template.Resources[OpenSearchDomainLogicalID];
+    template.Resources = {};
+    template.Resources[OpenSearchDomainLogicalID] = searchDomain;
+    template.Outputs = {};
+  };
+
   private clearTemplateState = (stackName: string) => {
     while (this.templateState.has(stackName)) {
       this.templateState.pop(stackName);
@@ -349,10 +481,5 @@ export class GraphQLResourceManager {
   };
 
   private getTableNameFromTemplate = (template: Template): string | undefined =>
-    Object.entries(template?.Resources || {}).find(([_, resource]) => resource.Type === 'AWS::DynamoDB::Table')?.[0];
+    Object.entries(template?.Resources || {}).find(([, resource]) => resource.Type === 'AWS::DynamoDB::Table')?.[0];
 }
-
-// https://stackoverflow.com/questions/39419170/how-do-i-check-that-a-switch-block-is-exhaustive-in-typescript
-export const assertUnreachable = (_: never): never => {
-  throw new Error('Default case should never reach');
-};

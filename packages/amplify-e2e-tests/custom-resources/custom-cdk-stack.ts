@@ -1,14 +1,23 @@
-import * as cdk from '@aws-cdk/core';
-import * as iam from '@aws-cdk/aws-iam';
-import * as sns from '@aws-cdk/aws-sns';
-import * as subs from '@aws-cdk/aws-sns-subscriptions';
-import * as sqs from '@aws-cdk/aws-sqs';
+// extraneous by design - this file is used in a project created by e2e tests, not by e2e tests directly
+// eslint-disable-next-line import/no-extraneous-dependencies
+import * as AmplifyHelpers from '@aws-amplify/cli-extensibility-helper';
+import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { Construct } from 'constructs';
 
+/**
+ * Base amplify stack class
+ */
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export class cdkStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps, amplifyResourceProps?: AmplifyHelpers.AmplifyResourceProps) {
     super(scope, id, props);
 
-    /* Do not remove - Amplify CLI automatically injects the current deployment environment in this input paramater */
+    /* Do not remove - Amplify CLI automatically injects the current deployment environment in this input parameter */
+    // eslint-disable-next-line no-new
     new cdk.CfnParameter(this, 'env', {
       type: 'String',
       description: 'Current Amplify CLI env name',
@@ -18,18 +27,15 @@ export class cdkStack extends cdk.Stack {
 
     /* Example 1: Set up an SQS queue with an SNS topic */
 
-    const queue = new sqs.Queue(this, 'sqs-queue', {
-      queueName: cdk.Fn.join('-', ['custom-cdk-generated-sqs-queue-test', cdk.Fn.ref('env')]),
-    }); // For name unqieueness
+    const queue = new sqs.Queue(this, 'sqs-queue');
 
     // 👇 create sns topic
-    const topic = new sns.Topic(this, 'sns-topic', {
-      topicName: cdk.Fn.join('-', ['custom-cdk-generated-sns-topic-test', cdk.Fn.ref('env')]),
-    }); // For name unqieueness
+    const topic = new sns.Topic(this, 'sns-topic');
 
     // 👇 subscribe queue to topic
     topic.addSubscription(new subs.SqsSubscription(queue));
 
+    // eslint-disable-next-line no-new
     new cdk.CfnOutput(this, 'snsTopicArn', {
       value: topic.topicArn,
       description: 'The arn of the SNS topic',
@@ -37,16 +43,19 @@ export class cdkStack extends cdk.Stack {
 
     /* Example 2: Adding IAM role to the custom stack */
     const role = new iam.Role(this, 'CustomRole', {
-      roleName: cdk.Fn.join('-', ['custom-cdk-generated-custom-role-test', cdk.Fn.ref('env')]), // For name unqieueness
       assumedBy: new iam.AccountRootPrincipal(),
     });
 
-    /*Example 3: Adding policy to the IAM role*/
+    /* Example 3: Adding policy to the IAM role*/
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['*'],
         resources: [topic.topicArn],
       }),
     );
+
+    AmplifyHelpers.addResourceDependency(this, amplifyResourceProps.category, amplifyResourceProps.resourceName, [
+      { category: 'storage', resourceName: 'ddb' },
+    ]);
   }
 }

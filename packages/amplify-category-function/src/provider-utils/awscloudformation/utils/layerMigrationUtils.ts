@@ -1,4 +1,5 @@
-import { $TSContext, exitOnNextTick, JSONUtilities, pathManager, stateManager } from 'amplify-cli-core';
+import { $TSContext, exitOnNextTick, JSONUtilities, pathManager, stateManager } from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import chalk from 'chalk';
 import * as fs from 'fs-extra';
 import _ from 'lodash';
@@ -6,22 +7,34 @@ import * as path from 'path';
 import { categoryName } from '../../../constants';
 import { layerConfigurationFileName, LegacyFilename, versionHash } from './constants';
 import { loadPluginFromFactory } from './functionPluginLoader';
+// eslint-disable-next-line import/no-cycle
 import { writeLayerConfigurationFile } from './layerConfiguration';
 import { defaultLayerPermission, LayerPermission, LayerRuntime, PermissionEnum } from './layerParams';
 
+/**
+ * Layer config state
+ */
 export const enum LegacyState {
   NOT_LEGACY,
   MULTI_ENV_LEGACY,
   SINGLE_ENV_LEGACY,
 }
 
+/**
+ * Layer permission
+ */
 export const enum LegacyPermissionEnum {
+  /* eslint-disable @typescript-eslint/naming-convention */
   AwsAccounts = 'awsAccounts',
   AwsOrg = 'awsOrg',
   Private = 'private',
   Public = 'public',
+  /* eslint-enable */
 }
 
+/**
+ * Layer permission object
+ */
 export type LegacyPermission = { type: LegacyPermissionEnum; accounts?: string[]; orgs?: string[] };
 
 type LegacyRuntime = {
@@ -45,7 +58,10 @@ type LegacyLayerParametersJson = {
 
 const layerVersionMapKey = 'layerVersionMap';
 
-export async function migrateLegacyLayer(context: $TSContext, layerName: string): Promise<boolean> {
+/**
+ * Migrate to latest layer config
+ */
+export const migrateLegacyLayer = async (context: $TSContext, layerName: string): Promise<boolean> => {
   const layerDirPath = pathManager.getResourceDirectoryPath(undefined, categoryName, layerName);
   const legacyState = getLegacyLayerState(layerName);
 
@@ -53,9 +69,10 @@ export async function migrateLegacyLayer(context: $TSContext, layerName: string)
     return false;
   }
 
-  context.print.warning(
-    '\n⚠️  Amplify updated the way Lambda layers work to better support team workflows and additional features.\n\
-This change requires a migration. Amplify will create a new Lambda layer version even if no layer content changes are made.\n',
+  printer.blankLine();
+  printer.warn('Amplify updated the way Lambda layers work to better support team workflows and additional features.');
+  printer.info(
+    'This change requires a migration. Amplify will create a new Lambda layer version even if no layer content changes are made.',
   );
 
   if (context?.exeInfo?.inputParams?.yes !== true) {
@@ -65,7 +82,6 @@ This change requires a migration. Amplify will create a new Lambda layer version
     }
   }
 
-  let runtimeCloudTemplateValues: string[];
   const layerConfiguration: { permissions: LayerPermission[]; runtimes: Partial<LayerRuntime>[]; nonMultiEnv?: boolean } = {
     permissions: undefined,
     runtimes: undefined,
@@ -81,12 +97,15 @@ This change requires a migration. Amplify will create a new Lambda layer version
     layerConfiguration.nonMultiEnv = true;
   }
 
-  runtimeCloudTemplateValues = legacyRuntimeArray.map(legacyRuntime => legacyRuntime.cloudTemplateValue);
-  legacyRuntimeArray.forEach((runtime: LegacyRuntime) => (runtime.cloudTemplateValue = undefined));
+  /* eslint-disable no-param-reassign */
+  const runtimeCloudTemplateValues = legacyRuntimeArray.map((legacyRuntime) => legacyRuntime.cloudTemplateValue);
+  legacyRuntimeArray.forEach((runtime: LegacyRuntime) => {
+    runtime.cloudTemplateValue = undefined;
+  });
   layerConfiguration.runtimes = legacyRuntimeArray;
 
   await Promise.all(
-    layerConfiguration.runtimes.map(async runtime => {
+    layerConfiguration.runtimes.map(async (runtime) => {
       if (runtime.value === 'nodejs') {
         runtime.runtimePluginId = 'amplify-nodejs-function-runtime-provider';
       } else if (runtime.value === 'python') {
@@ -97,19 +116,20 @@ This change requires a migration. Amplify will create a new Lambda layer version
       runtime.layerExecutablePath = runtimeInfo.runtime.layerExecutablePath;
     }),
   );
+  /* eslint-enable */
 
   const layerVersions = Object.keys(layerVersionMap)
-    .map(version => parseInt(version, 10))
+    .map((version) => parseInt(version, 10))
     .sort((a, b) => b - a);
 
   const permissions: LegacyPermission[] = layerVersionMap[`${_.first(layerVersions)}`]?.permissions;
 
   if (permissions === undefined) {
-    context.print.warning(`Unable to find layer permissions for ${layerName}, falling back to default.`);
+    printer.warn(`Unable to find layer permissions for ${layerName}, falling back to default.`);
     layerConfiguration.permissions = [defaultLayerPermission];
   } else {
     layerConfiguration.permissions = [];
-    permissions.map(permission => {
+    permissions.forEach((permission) => {
       switch (permission.type) {
         case LegacyPermissionEnum.Private:
           layerConfiguration.permissions.push({ type: PermissionEnum.Private });
@@ -134,15 +154,18 @@ This change requires a migration. Amplify will create a new Lambda layer version
     description: '',
   });
 
-  migrateAmplifyProjectFiles(layerName, 'legacyLayerMigration', context.amplify.getEnvInfo().envName);
+  migrateAmplifyProjectFiles(layerName, 'legacyLayerMigration');
   writeLayerConfigurationFile(layerName, layerConfiguration);
 
   fs.removeSync(path.join(layerDirPath, LegacyFilename.layerRuntimes));
   fs.removeSync(path.join(layerDirPath, LegacyFilename.layerParameters));
   return true;
-}
+};
 
-export function getLegacyLayerState(layerName: string): LegacyState {
+/**
+ * Get layer state
+ */
+export const getLegacyLayerState = (layerName: string): LegacyState => {
   const layerDirPath = pathManager.getResourceDirectoryPath(undefined, categoryName, layerName);
   if (fs.existsSync(path.join(layerDirPath, LegacyFilename.layerParameters))) {
     return LegacyState.SINGLE_ENV_LEGACY;
@@ -158,9 +181,12 @@ export function getLegacyLayerState(layerName: string): LegacyState {
 
   throw new Error(`Lambda layer ${layerName} is missing a state file. Try running "amplify pull --restore". If the issue persists, recreating the layer is the best option. \
 ${chalk.red('Ensure your layer content is backed up!')}`);
-}
+};
 
-export function readLegacyRuntimes(layerName: string, legacyState: LegacyState): LegacyRuntime[] {
+/**
+ * get layer runtime
+ */
+export const readLegacyRuntimes = (layerName: string, legacyState: LegacyState): LegacyRuntime[] => {
   const layerDirPath = pathManager.getResourceDirectoryPath(undefined, categoryName, layerName);
   if (legacyState === LegacyState.SINGLE_ENV_LEGACY) {
     return readLegacyLayerParametersJson(layerDirPath).runtimes;
@@ -168,35 +194,20 @@ export function readLegacyRuntimes(layerName: string, legacyState: LegacyState):
   if (legacyState === LegacyState.MULTI_ENV_LEGACY) {
     return JSONUtilities.readJson<LegacyRuntime[]>(path.join(layerDirPath, LegacyFilename.layerRuntimes));
   }
-}
+  return undefined;
+};
 
-export function removeLayerFromTeamProviderInfo(projectRoot: string | undefined, envName: string, layerName: string) {
-  const nonCfnDataKey = 'nonCFNdata';
-  const teamProviderInfo = stateManager.getTeamProviderInfo(projectRoot);
+const readLegacyLayerParametersJson = (layerDirPath: string): LegacyLayerParametersJson =>
+  JSONUtilities.readJson<LegacyLayerParametersJson>(path.join(layerDirPath, LegacyFilename.layerParameters));
 
-  _.unset(teamProviderInfo, [envName, nonCfnDataKey, categoryName, layerName]);
-  if (_.isEmpty(_.get(teamProviderInfo, [envName, nonCfnDataKey, categoryName]))) {
-    _.unset(teamProviderInfo, [envName, nonCfnDataKey, categoryName]);
-    if (_.isEmpty(_.get(teamProviderInfo, [envName, nonCfnDataKey]))) {
-      _.unset(teamProviderInfo, [envName, nonCfnDataKey]);
-    }
-  }
-  stateManager.setTeamProviderInfo(projectRoot, teamProviderInfo);
-}
-
-function readLegacyLayerParametersJson(layerDirPath: string) {
-  return JSONUtilities.readJson<LegacyLayerParametersJson>(path.join(layerDirPath, LegacyFilename.layerParameters));
-}
-
-function migrateAmplifyProjectFiles(layerName: string, latestLegacyHash: string, envName?: string) {
+const migrateAmplifyProjectFiles = (layerName: string, latestLegacyHash: string): void => {
   const projectRoot = pathManager.findProjectRoot();
-  removeLayerFromTeamProviderInfo(projectRoot, envName, layerName);
   const meta = stateManager.getMeta(projectRoot);
 
   if (meta?.[categoryName]?.[layerName]?.[layerVersionMapKey]) {
     meta[categoryName][layerName][layerVersionMapKey] = undefined;
   }
 
-  _.set(meta, [categoryName, layerName, versionHash], latestLegacyHash);
+  _.setWith(meta, [categoryName, layerName, versionHash], latestLegacyHash);
   stateManager.setMeta(projectRoot, meta);
-}
+};

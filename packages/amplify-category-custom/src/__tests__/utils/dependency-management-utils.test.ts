@@ -1,21 +1,19 @@
-import { $TSContext, CFNTemplateFormat, readCFNTemplate, pathManager, stateManager, writeCFNTemplate } from 'amplify-cli-core';
+import { $TSContext, CFNTemplateFormat, readCFNTemplate, pathManager, stateManager, writeCFNTemplate } from '@aws-amplify/amplify-cli-core';
 import { glob } from 'glob';
-import * as inquirer from 'inquirer';
-import { prompter } from 'amplify-prompts';
+import { prompter } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
+import * as cdk from 'aws-cdk-lib';
 import {
   getResourceCfnOutputAttributes,
   getAllResources,
   addCDKResourceDependency,
   addCFNResourceDependency,
 } from '../../utils/dependency-management-utils';
-import * as cdk from '@aws-cdk/core';
 
-jest.mock('amplify-cli-core');
-jest.mock('amplify-prompts');
+jest.mock('@aws-amplify/amplify-cli-core');
+jest.mock('@aws-amplify/amplify-prompts');
 jest.mock('glob');
 jest.mock('fs-extra');
-jest.mock('inquirer');
 
 const readCFNTemplate_mock = readCFNTemplate as jest.MockedFunction<typeof readCFNTemplate>;
 const writeCFNTemplate_mock = writeCFNTemplate as jest.MockedFunction<typeof writeCFNTemplate>;
@@ -28,29 +26,8 @@ pathManager.getBackendDirPath = jest.fn().mockReturnValue('mockTargetDir');
 pathManager.getResourceDirectoryPath = jest.fn().mockReturnValue('mockResourceDir');
 
 describe('getResourceCfnOutputAttributes() scenarios', () => {
-  let mockContext: $TSContext;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockContext = {
-      amplify: {
-        openEditor: jest.fn(),
-        updateamplifyMetaAfterResourceAdd: jest.fn(),
-        copyBatch: jest.fn(),
-        getResourceStatus: jest.fn().mockResolvedValue({
-          allResources: [
-            {
-              resourceName: 'mockresource1',
-              service: 'customCDK',
-            },
-            {
-              resourceName: 'mockresource2',
-              service: 'customCDK',
-            },
-          ],
-        }),
-      },
-    } as unknown as $TSContext;
   });
 
   it('get resource attr for resources with build folder with one cfn file', async () => {
@@ -111,29 +88,8 @@ describe('getResourceCfnOutputAttributes() scenarios', () => {
 });
 
 describe('getAllResources() scenarios', () => {
-  let mockContext: $TSContext;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockContext = {
-      amplify: {
-        openEditor: jest.fn(),
-        updateamplifyMetaAfterResourceAdd: jest.fn(),
-        copyBatch: jest.fn(),
-        getResourceStatus: jest.fn().mockResolvedValue({
-          allResources: [
-            {
-              resourceName: 'mockresource1',
-              service: 'customCDK',
-            },
-            {
-              resourceName: 'mockresource2',
-              service: 'customCDK',
-            },
-          ],
-        }),
-      },
-    } as unknown as $TSContext;
   });
 
   it('get all resource types', async () => {
@@ -163,29 +119,8 @@ describe('getAllResources() scenarios', () => {
 });
 
 describe('addCDKResourceDependency() scenarios', () => {
-  let mockContext: $TSContext;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockContext = {
-      amplify: {
-        openEditor: jest.fn(),
-        updateamplifyMetaAfterResourceAdd: jest.fn(),
-        copyBatch: jest.fn(),
-        getResourceStatus: jest.fn().mockResolvedValue({
-          allResources: [
-            {
-              resourceName: 'mockresource1',
-              service: 'customCDK',
-            },
-            {
-              resourceName: 'mockresource2',
-              service: 'customCDK',
-            },
-          ],
-        }),
-      },
-    } as unknown as $TSContext;
   });
 
   it('get depenencies for a custom CDK stack', async () => {
@@ -319,7 +254,7 @@ describe('addCFNResourceDependency() scenarios', () => {
     } as unknown as $TSContext;
   });
 
-  it('add new resource dependency to custom cfn stack ', async () => {
+  it('add new resource dependency to custom cfn stack', async () => {
     prompter.yesOrNo = jest.fn().mockReturnValueOnce(true);
     fs_mock.existsSync.mockReturnValue(false); // if build dir exists
 
@@ -355,10 +290,8 @@ describe('addCFNResourceDependency() scenarios', () => {
 
     // test with adding one dependency at once
 
-    const inqurer_mock = inquirer as jest.Mocked<typeof inquirer>;
-    inqurer_mock.prompt
-      .mockResolvedValueOnce({ categories: ['mockCategory1'] })
-      .mockResolvedValueOnce({ resources: ['mockResourceName1'] });
+    const prompterMock = prompter as jest.Mocked<typeof prompter>;
+    prompterMock.pick.mockResolvedValueOnce(['mockCategory1']).mockResolvedValueOnce(['mockResourceName1']);
 
     await addCFNResourceDependency(mockContext, 'customResourcename');
 

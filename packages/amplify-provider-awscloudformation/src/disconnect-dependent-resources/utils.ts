@@ -1,12 +1,21 @@
-import { $TSAny, JSONUtilities, pathManager, readCFNTemplate, stateManager, writeCFNTemplate } from 'amplify-cli-core';
+import {
+  AmplifyFault,
+  $TSAny,
+  JSONUtilities,
+  pathManager,
+  readCFNTemplate,
+  stateManager,
+  writeCFNTemplate,
+} from '@aws-amplify/amplify-cli-core';
 import * as path from 'path';
 import * as fs from 'fs-extra';
+import { CloudFormation } from 'aws-sdk';
+import _ from 'lodash';
+import { ensureEnvParamManager } from '@aws-amplify/amplify-environment-parameters';
 import { S3 } from '../aws-utils/aws-s3';
 import { fileLogger } from '../utils/aws-logger';
-import { CloudFormation } from 'aws-sdk';
 import { getPreviousDeploymentRecord } from '../utils/amplify-resource-state-utils';
 import { DeploymentOp, DeploymentStep } from '../iterative-deployment';
-import _ from 'lodash';
 
 const logger = fileLogger('disconnect-dependent-resources');
 
@@ -17,12 +26,12 @@ export const getDependentFunctions = async (
   modelNames: string[],
   functionNames: string[],
   functionParamsSupplier: (functionName: string) => Promise<$TSAny>,
-) => {
+): Promise<string[]> => {
   const dependentFunctions: string[] = [];
   for (const funcName of functionNames) {
     const funcParams = await functionParamsSupplier(funcName);
     const dependentModels = funcParamsToDependentAppSyncModels(funcParams);
-    const hasDep = dependentModels.map(model => modelNames.includes(model)).reduce((acc, it) => acc || it, false);
+    const hasDep = dependentModels.map((model) => modelNames.includes(model)).reduce((acc, it) => acc || it, false);
     if (hasDep) {
       dependentFunctions.push(funcName);
     }
@@ -33,7 +42,7 @@ export const getDependentFunctions = async (
 /**
  * Generates temporary CFN templates for the given functions that have placeholder values for all references to replaced model tables
  */
-export const generateTempFuncCFNTemplates = async (dependentFunctions: string[]) => {
+export const generateTempFuncCFNTemplates = async (dependentFunctions: string[]): Promise<void> => {
   const tempPaths: string[] = [];
   for (const funcName of dependentFunctions) {
     const { cfnTemplate, templateFormat } = readCFNTemplate(
@@ -49,7 +58,7 @@ export const generateTempFuncCFNTemplates = async (dependentFunctions: string[])
 /**
  * Uploads the CFN template and iterative deployment meta file to S3
  */
-export const uploadTempFuncDeploymentFiles = async (s3Client: S3, funcNames: string[]) => {
+export const uploadTempFuncDeploymentFiles = async (s3Client: S3, funcNames: string[]): Promise<void> => {
   for (const funcName of funcNames) {
     const uploads = [
       {
@@ -61,18 +70,16 @@ export const uploadTempFuncDeploymentFiles = async (s3Client: S3, funcNames: str
         Key: getTempFuncMetaS3Key(funcName),
       },
     ];
-    const log = logger('uploadTemplateToS3.s3.uploadFile', [{ Key: uploads[0].Key }]);
+    logger('uploadTemplateToS3.s3.uploadFile', [{ Key: uploads[0].Key }])();
     for (const upload of uploads) {
-      try {
-        await s3Client.uploadFile(upload, false);
-      } catch (error) {
-        log(error);
-        throw error;
-      }
+      await s3Client.uploadFile(upload, false);
     }
   }
 };
 
+/**
+ * Generates the iterative deployment steps necessary to remove then re-add function dependency on rebuilt table
+ */
 export const generateIterativeFuncDeploymentSteps = async (
   cfnClient: CloudFormation,
   rootStackId: string,
@@ -98,10 +105,15 @@ export const generateIterativeFuncDeploymentSteps = async (
  * Prepends beforeSteps and afterSteps into a single array of deployment steps.
  * Moves rollback and previousMetaKey pointers to maintain the integrity of the deployment steps.
  */
-export const prependDeploymentSteps = (beforeSteps: DeploymentStep[], afterSteps: DeploymentStep[], beforeStepsLastMetaKey: string) => {
+export const prependDeploymentSteps = (
+  beforeSteps: DeploymentStep[],
+  afterSteps: DeploymentStep[],
+  beforeStepsLastMetaKey: string,
+): DeploymentStep[] => {
   if (beforeSteps.length === 0) {
     return afterSteps;
   }
+  /* eslint-disable no-param-reassign */
   beforeSteps[0].rollback = _.cloneDeep(afterSteps[0].rollback);
   beforeSteps[0].deployment.previousMetaKey = afterSteps[0].deployment.previousMetaKey;
   afterSteps[0].rollback = _.cloneDeep(beforeSteps[beforeSteps.length - 1].deployment);
@@ -110,26 +122,36 @@ export const prependDeploymentSteps = (beforeSteps: DeploymentStep[], afterSteps
     afterSteps[1].rollback.previousMetaKey = beforeStepsLastMetaKey;
   }
   return beforeSteps.concat(afterSteps);
+  /* eslint-enable no-param-reassign */
 };
 
 /**
  * Generates a deployment operation for a temporary function deployment.
  * Also writes the deployment operation to the temp meta path
  */
-const generateIterativeFuncDeploymentOp = async (cfnClient: CloudFormation, rootStackId: string, functionName: string) => {
+const generateIterativeFuncDeploymentOp = async (
+  cfnClient: CloudFormation,
+  rootStackId: string,
+  functionName: string,
+): Promise<DeploymentOp> => {
   const funcStack = await cfnClient
     .describeStackResources({ StackName: rootStackId, LogicalResourceId: `function${functionName}` })
     .promise();
+
+  if (!funcStack.StackResources || funcStack.StackResources.length === 0) {
+    throw new AmplifyFault('ResourceNotFoundFault', {
+      message: `Could not find function ${functionName} in root stack ${rootStackId}`,
+    });
+  }
+
   const funcStackId = funcStack.StackResources[0].PhysicalResourceId;
   const { parameters, capabilities } = await getPreviousDeploymentRecord(cfnClient, funcStackId);
   const funcCfnParams = stateManager.getResourceParametersJson(undefined, 'function', functionName, {
     throwIfNotExist: false,
     default: {},
   });
-  const tpi = stateManager.getTeamProviderInfo(undefined, { throwIfNotExist: false, default: {} });
-  const env = stateManager.getLocalEnvInfo().envName;
-  const tpiCfnParams = tpi?.[env]?.categories?.function?.[functionName] || {};
-  const params = { ...parameters, ...funcCfnParams, ...tpiCfnParams };
+  const funcEnvParams = (await ensureEnvParamManager()).instance.getResourceParamManager('function', functionName).getAllParams();
+  const params = { ...parameters, ...funcCfnParams, ...funcEnvParams };
   const deploymentStep: DeploymentOp = {
     stackTemplatePathOrUrl: getTempFuncTemplateS3Key(functionName),
     parameters: params,
@@ -148,30 +170,36 @@ const getTempFuncTemplateLocalPath = (funcName: string): string => path.join(loc
 const getTempFuncMetaLocalPath = (funcName: string): string => path.join(localPrefix(funcName), tempMetaFilename(funcName));
 const getTempFuncMetaS3Key = (funcName: string): string => path.posix.join(s3Prefix, tempMetaFilename(funcName));
 
-const tempTemplateFilename = (funcName: string) => `temp-${funcName}-cloudformation-template.json`;
-const tempMetaFilename = (funcName: string) => `temp-${funcName}-deployment-meta.json`;
+const tempTemplateFilename = (funcName: string): string => `temp-${funcName}-cloudformation-template.json`;
+const tempMetaFilename = (funcName: string): string => `temp-${funcName}-deployment-meta.json`;
+
 export const s3Prefix = 'amplify-cfn-templates/function/temp';
-export const localPrefix = funcName => path.join(pathManager.getResourceDirectoryPath(undefined, 'function', funcName), 'temp');
+
+/**
+ * Path prefix for function temp files
+ */
+export const localPrefix = (funcName: string): string =>
+  path.join(pathManager.getResourceDirectoryPath(undefined, 'function', funcName), 'temp');
 
 /**
  * Recursively searches for 'Fn::ImportValue' nodes in a CFN template object and replaces them with a placeholder value
- * @param node
- * @returns
  */
-const replaceFnImport = (node: $TSAny) => {
+const replaceFnImport = (node: $TSAny): void => {
   if (typeof node !== 'object') {
     return;
   }
   if (Array.isArray(node)) {
-    node.forEach(el => replaceFnImport(el));
+    node.forEach((el) => replaceFnImport(el));
   }
   const nodeKeys = Object.keys(node);
   if (nodeKeys.length === 1 && nodeKeys[0] === 'Fn::ImportValue') {
+    /* eslint-disable no-param-reassign */
     node['Fn::ImportValue'] = undefined;
     node['Fn::Sub'] = 'TemporaryPlaceholderValue';
+    /* eslint-enable no-param-reassign */
     return;
   }
-  Object.values(node).forEach(value => replaceFnImport(value));
+  Object.values(node).forEach((value) => replaceFnImport(value));
 };
 
 /**
@@ -179,5 +207,5 @@ const replaceFnImport = (node: $TSAny) => {
  */
 const funcParamsToDependentAppSyncModels = (funcParams: $TSAny): string[] =>
   Object.keys(funcParams?.permissions?.storage || {})
-    .filter(key => key.endsWith(':@model(appsync)'))
-    .map(key => key.slice(0, key.lastIndexOf(':')));
+    .filter((key) => key.endsWith(':@model(appsync)'))
+    .map((key) => key.slice(0, key.lastIndexOf(':')));

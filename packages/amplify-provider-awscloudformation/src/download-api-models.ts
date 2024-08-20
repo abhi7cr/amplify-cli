@@ -1,11 +1,13 @@
-import { $TSContext, $TSObject, pathManager } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
-import extract from 'extract-zip';
+import { $TSAny, $TSContext, $TSObject, AmplifyError, AmplifyFrontend, pathManager, extract } from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
 import sequential from 'promise-sequential';
 import { APIGateway } from './aws-utils/aws-apigw';
 
-export async function downloadAPIModels(context: $TSContext, allResources: $TSObject[]) {
+/**
+ * Download API models from API Gateway
+ */
+export const downloadAPIModels = async (context: $TSContext, allResources: $TSObject[]): Promise<$TSAny[]> => {
   const { amplify } = context;
   const projectConfig = amplify.getProjectConfig();
 
@@ -15,7 +17,7 @@ export async function downloadAPIModels(context: $TSContext, allResources: $TSOb
     return;
   }
 
-  const resources = allResources.filter(resource => resource.service === 'API Gateway');
+  const resources = allResources.filter((resource) => resource.service === 'API Gateway');
   const promises = [];
 
   if (resources.length > 0) {
@@ -29,10 +31,11 @@ export async function downloadAPIModels(context: $TSContext, allResources: $TSOb
     }
   }
 
+  // eslint-disable-next-line consistent-return
   return sequential(promises);
-}
+};
 
-async function extractAPIModel(context: $TSContext, resource: $TSObject, framework: string) {
+const extractAPIModel = async (context: $TSContext, resource: $TSObject, framework: AmplifyFrontend): Promise<void> => {
   const apigw = await APIGateway.getInstance(context);
   const apigwParams = getAPIGWRequestParams(resource, framework);
 
@@ -46,6 +49,14 @@ async function extractAPIModel(context: $TSContext, resource: $TSObject, framewo
 
   fs.ensureDirSync(tempDir);
 
+  // After updating node types from 12.x to 18.x the objectResult
+  // became not directly assignable to Buffer.from parameter type.
+  // However, this code has been running fine since 2022 which means that
+  // runtime types are compatible.
+  // The alternative would require multiple logical branches to handle type mismatch
+  // that doesn't seem to exist in runtime.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const buff = Buffer.from(data.body);
   fs.writeFileSync(`${tempDir}/${apiName}.zip`, buff);
   await extract(`${tempDir}/${apiName}.zip`, { dir: tempDir });
@@ -53,14 +64,14 @@ async function extractAPIModel(context: $TSContext, resource: $TSObject, framewo
   // Copy files to src
   copyFilesToSrc(context, apiName, framework);
   fs.removeSync(tempDir);
-}
+};
 
-function copyFilesToSrc(context: $TSContext, apiName: string, framework: string) {
+const copyFilesToSrc = (context: $TSContext, apiName: string, framework: AmplifyFrontend): void => {
   const backendDir = pathManager.getBackendDirPath();
   const tempDir = `${backendDir}/.temp`;
 
   switch (framework) {
-    case 'android':
+    case AmplifyFrontend.android:
       {
         const generatedSrc = `${tempDir}/${apiName}-Artifact-1.0/src/main/java`;
 
@@ -71,7 +82,7 @@ function copyFilesToSrc(context: $TSContext, apiName: string, framework: string)
         fs.copySync(generatedSrc, target);
       }
       break;
-    case 'ios':
+    case AmplifyFrontend.ios:
       {
         const generatedSrc = `${tempDir}/aws-apigateway-ios-swift/generated-src`;
 
@@ -83,11 +94,13 @@ function copyFilesToSrc(context: $TSContext, apiName: string, framework: string)
       }
       break;
     default:
-      throw new Error(`Unsupported framework. ${framework}`);
+      throw new AmplifyError('FrameworkNotSupportedError', {
+        message: `Unsupported framework. ${framework}`,
+      });
   }
-}
+};
 
-function getAPIGWRequestParams(resource: $TSObject, framework: string) {
+const getAPIGWRequestParams = (resource: $TSObject, framework: AmplifyFrontend): $TSAny => {
   const apiUrl = resource.output.RootUrl;
   const apiName = resource.output.ApiName;
   const firstSplit = apiUrl.split('/');
@@ -97,7 +110,7 @@ function getAPIGWRequestParams(resource: $TSObject, framework: string) {
   const apiId = secondSplit[0];
 
   switch (framework) {
-    case 'android':
+    case AmplifyFrontend.android:
       return {
         restApiId: apiId,
         sdkType: framework,
@@ -110,7 +123,7 @@ function getAPIGWRequestParams(resource: $TSObject, framework: string) {
         },
       };
 
-    case 'ios':
+    case AmplifyFrontend.ios:
       return {
         restApiId: apiId,
         sdkType: 'swift',
@@ -121,6 +134,8 @@ function getAPIGWRequestParams(resource: $TSObject, framework: string) {
       };
 
     default:
-      throw new Error(`Unsupported framework. ${framework}`);
+      throw new AmplifyError('FrameworkNotSupportedError', {
+        message: `Unsupported framework. ${framework}`,
+      });
   }
-}
+};

@@ -1,6 +1,6 @@
 {
   "name": "@aws-amplify/cli",
-  "version": "8.1.0",
+  "version": "12.12.6",
   "description": "Amplify CLI",
   "repository": {
     "type": "git",
@@ -21,23 +21,28 @@
     "access": "public"
   },
   "scripts": {
+    "build": "tsc",
     "postinstall": "node ./lib/install.js || echo \"failed to install amplify binary\"",
     "prepublishOnly": "rimraf ./lib && tsc",
     "run": "ts-node ./run.ts",
-    "build": "tsc"
+    "extract-api": "ts-node ../../scripts/extract-api.ts"
   },
   "engines": {
     "node": ">=12.0.0"
   },
   "dependencies": {
-    "axios": "^0.26.0",
+    "axios": "^1.6.7",
     "rimraf": "^3.0.2",
     "tar-stream": "^2.2.0"
   },
   "devDependencies": {
-    "@aws-amplify/cli-internal": "8.1.0",
+    "@aws-amplify/cli-internal": "12.12.6",
     "@types/tar": "^6.1.1",
-    "prettier": "^1.19.1",
     "rimraf": "^3.0.2"
+  },
+  "berry": {
+    "plugins": [
+      "@yarn/plugin-typescript"
+    ]
   }
 }

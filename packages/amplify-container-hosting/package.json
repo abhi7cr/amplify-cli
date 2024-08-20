@@ -1,6 +1,6 @@
 {
-  "name": "amplify-container-hosting",
-  "version": "2.4.33",
+  "name": "@aws-amplify/amplify-container-hosting",
+  "version": "2.8.12",
   "description": "amplify-cli hosting plugin for containers",
   "repository": {
     "type": "git",
@@ -14,33 +14,36 @@
     "amplify",
     "aws"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test-ci": "yarn jest --ci",
-    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "clean": "rimraf lib tsconfig.tsbuildinfo node_modules",
     "watch": "tsc --watch",
-    "test": "jest --coverage --passWithNoTests"
+    "test": "jest --logHeapUsage --coverage --passWithNoTests",
+    "extract-api": "ts-node ../../scripts/extract-api.ts"
   },
   "dependencies": {
-    "@aws-amplify/amplify-category-api": "2.0.4",
-    "amplify-cli-core": "2.6.0",
-    "chalk": "^4.1.1",
+    "@aws-amplify/amplify-category-api": "^5.12.5",
+    "@aws-amplify/amplify-cli-core": "4.3.10",
+    "@aws-amplify/amplify-environment-parameters": "1.9.15",
     "fs-extra": "^8.1.0",
     "inquirer": "^7.3.3",
     "mime-types": "^2.1.26",
-    "minimatch": "^3.0.4",
-    "moment": "^2.24.0",
-    "ora": "^4.0.3",
     "promise-sequential": "^1.1.1"
-  },
-  "devDependencies": {
-    "mockirer": "^2.0.1"
   },
   "jest": {
     "collectCoverage": true,
     "collectCoverageFrom": [
       "lib/**/*.js",
       "index.js"
+    ]
+  },
+  "berry": {
+    "plugins": [
+      "@yarn/plugin-typescript"
     ]
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@aws-amplify/amplify-category-storage",
-  "version": "3.1.26",
+  "version": "5.5.15",
   "description": "amplify-cli storage plugin",
   "repository": {
     "type": "git",
@@ -13,10 +13,11 @@
   "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "jest",
-    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "test": "jest --logHeapUsage",
+    "clean": "rimraf lib tsconfig.tsbuildinfo node_modules",
     "watch": "tsc -w",
-    "generateSchemas": "ts-node ./resources/genInputSchema.ts"
+    "generateSchemas": "ts-node ./resources/genInputSchema.ts",
+    "extract-api": "ts-node ../../scripts/extract-api.ts"
   },
   "keywords": [
     "amplify",
@@ -26,30 +27,31 @@
     "access": "public"
   },
   "dependencies": {
-    "@aws-amplify/cli-extensibility-helper": "2.3.25",
-    "@aws-cdk/aws-dynamodb": "~1.124.0",
-    "@aws-cdk/aws-s3": "~1.124.0",
-    "@aws-cdk/core": "~1.124.0",
-    "amplify-cli-core": "2.6.0",
-    "amplify-headless-interface": "1.14.2",
-    "amplify-prompts": "2.0.1",
-    "amplify-util-import": "2.2.28",
+    "@aws-amplify/amplify-cli-core": "4.3.10",
+    "@aws-amplify/amplify-environment-parameters": "1.9.15",
+    "@aws-amplify/amplify-prompts": "2.8.6",
+    "@aws-amplify/amplify-util-import": "2.8.3",
+    "@aws-amplify/cli-extensibility-helper": "3.0.34",
+    "amplify-headless-interface": "1.17.7",
+    "amplify-util-headless-input": "1.9.18",
+    "aws-cdk-lib": "~2.129.0",
+    "aws-sdk": "^2.1464.0",
     "chalk": "^4.1.1",
+    "constructs": "^10.0.5",
     "enquirer": "^2.3.6",
     "fs-extra": "^8.1.0",
-    "inquirer": "^7.3.3",
     "lodash": "^4.17.21",
     "promise-sequential": "^1.1.1",
-    "uuid": "^8.3.2",
-    "vm2": "^3.9.8"
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
-    "aws-sdk": "^2.1113.0",
     "cloudform-types": "^4.2.0",
     "rimraf": "^3.0.2"
   },
   "jest": {
-    "testURL": "http://localhost",
+    "testEnvironmentOptions": {
+      "url": "http://localhost"
+    },
     "transform": {
       "^.+\\.tsx?$": "ts-jest"
     },
@@ -63,9 +65,18 @@
       "node"
     ],
     "collectCoverage": true,
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx,js,jsx}",
+      "!src/__tests__/"
+    ],
     "coverageReporters": [
       "json",
       "html"
+    ]
+  },
+  "berry": {
+    "plugins": [
+      "@yarn/plugin-typescript"
     ]
   }
 }

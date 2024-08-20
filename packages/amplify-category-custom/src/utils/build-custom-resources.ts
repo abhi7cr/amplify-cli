@@ -1,5 +1,13 @@
-import { $TSContext, getPackageManager, pathManager, ResourceTuple } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
+import {
+  $TSAny,
+  $TSContext,
+  AmplifyError,
+  getPackageManager,
+  JSONUtilities,
+  pathManager,
+  ResourceTuple,
+} from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import execa from 'execa';
 import * as fs from 'fs-extra';
 import ora from 'ora';
@@ -7,68 +15,73 @@ import * as path from 'path';
 import { categoryName, TYPES_DIR_NAME, AMPLIFY_RESOURCES_TYPE_DEF_FILENAME } from './constants';
 import { getAllResources } from './dependency-management-utils';
 import { generateCloudFormationFromCDK } from './generate-cfn-from-cdk';
-
-const resourcesDirRoot = path.normalize(path.join(__dirname, '../../resources'));
-const amplifyDependentResourcesFilename = 'amplify-dependent-resources-ref.ejs';
+import { skipHooks } from '@aws-amplify/amplify-cli-core';
 
 type ResourceMeta = ResourceTuple & {
   service: string;
   build: boolean;
 };
-
-export async function buildCustomResources(context: $TSContext, resourceName?: string) {
+/**
+ * builds custom resources
+ * @param context object
+ * @param resourceName resource name to build
+ */
+export const buildCustomResources = async (context: $TSContext, resourceName?: string): Promise<void> => {
   const spinner = ora('Building custom resources');
   try {
     spinner.start();
 
-    const resourcesToBuild = (await getSelectedResources(context, resourceName)).filter(resource => resource.service === 'customCDK');
+    const resourcesToBuild = (await getSelectedResources(context, resourceName)).filter((resource) => resource.service === 'customCDK');
     for await (const resource of resourcesToBuild) {
-      await buildResource(context, resource);
+      await buildResource(resource);
     }
-  } catch (err: any) {
-    printer.error('There was an error building the custom resources');
-    printer.error(err.stack);
+  } catch (err: $TSAny) {
+    throw new AmplifyError(
+      'InvalidCustomResourceError',
+      {
+        message: `There was an error building the custom resources`,
+        details: err.message,
+        resolution: 'There may be errors in your custom resource file. If so, fix the errors and try again.',
+      },
+      err,
+    );
+  } finally {
     spinner.stop();
-    context.usageData.emitError(err);
-    process.exitCode = 1;
   }
-  spinner.stop();
-}
-
-const getSelectedResources = async (context: $TSContext, resourceName?: string) => {
-  return (await context.amplify.getResourceStatus(categoryName, resourceName)).allResources as ResourceMeta[];
 };
 
-export async function generateDependentResourcesType(context: $TSContext) {
+const getSelectedResources = async (context: $TSContext, resourceName?: string): Promise<ResourceMeta[]> =>
+  (await context.amplify.getResourceStatus(categoryName, resourceName)).allResources as ResourceMeta[];
+
+/**
+ *  generates dependent resource type
+ */
+export const generateDependentResourcesType = async (): Promise<void> => {
   const resourceDirPath = path.join(pathManager.getBackendDirPath(), TYPES_DIR_NAME);
+  const target = path.join(resourceDirPath, AMPLIFY_RESOURCES_TYPE_DEF_FILENAME);
+  const dependentResourceAttributesFileContent = `export type AmplifyDependentResourcesAttributes = ${JSONUtilities.stringify(
+    getAllResources(),
+    { orderedKeys: true },
+  )}`;
 
-  const copyJobs = [
-    {
-      dir: resourcesDirRoot,
-      template: amplifyDependentResourcesFilename,
-      target: path.join(resourceDirPath, AMPLIFY_RESOURCES_TYPE_DEF_FILENAME),
-    },
-  ];
+  await fs.ensureDir(path.dirname(target));
+  await fs.writeFile(target, dependentResourceAttributesFileContent);
+};
 
-  const allResources = getAllResources();
-
-  const params = {
-    dependentResourcesType: allResources,
-  };
-
-  await context.amplify.copyBatch(context, copyJobs, params, true);
-}
-
-async function buildResource(context: $TSContext, resource: ResourceMeta) {
+const buildResource = async (resource: ResourceMeta): Promise<void> => {
   const targetDir = path.resolve(path.join(pathManager.getBackendDirPath(), categoryName, resource.resourceName));
-
+  if (skipHooks()) {
+    throw new AmplifyError('DeploymentError', {
+      message: 'A flag to disable custom resources has been detected, please deploy from a different environment.',
+    }); // should rollback
+  }
   // generate dynamic types for Amplify resources
-  await generateDependentResourcesType(context);
+  await generateDependentResourcesType();
 
-  const packageManager = getPackageManager(targetDir);
+  const packageManager = await getPackageManager(targetDir);
 
   if (packageManager === null) {
-    throw new Error('No package manager found. Please install npm or yarn to compile overrides for this project.');
+    throw new Error('No package manager found. Please install npm, yarn, or pnpm to compile overrides for this project.');
   }
 
   try {
@@ -77,8 +90,8 @@ async function buildResource(context: $TSContext, resource: ResourceMeta) {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
-  } catch (error: any) {
-    if ((error as any).code === 'ENOENT') {
+  } catch (error: $TSAny) {
+    if ((error as $TSAny).code === 'ENOENT') {
       throw new Error(`Packaging overrides failed. Could not find ${packageManager} executable in the PATH.`);
     } else {
       throw new Error(`Packaging overrides failed with the error \n${error.message}`);
@@ -90,7 +103,10 @@ async function buildResource(context: $TSContext, resource: ResourceMeta) {
   const localTscExecutablePath = path.join(targetDir, 'node_modules', '.bin', 'tsc');
 
   if (!fs.existsSync(localTscExecutablePath)) {
-    throw new Error('Typescript executable not found. Please add it as a dev-dependency in the package.json file for this resource.');
+    throw new AmplifyError('MissingOverridesInstallationRequirementsError', {
+      message: 'TypeScript executable not found.',
+      resolution: 'Please add it as a dev-dependency in the package.json file for this resource.',
+    });
   }
 
   try {
@@ -99,10 +115,10 @@ async function buildResource(context: $TSContext, resource: ResourceMeta) {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
-  } catch (error: any) {
+  } catch (error: $TSAny) {
     printer.error(`Failed building resource ${resource.resourceName}`);
     throw error;
   }
 
   await generateCloudFormationFromCDK(resource.resourceName);
-}
+};

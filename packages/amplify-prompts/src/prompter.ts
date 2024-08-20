@@ -10,16 +10,18 @@ import { prompt } from 'enquirer';
 // @ts-ignore
 import * as actions from 'enquirer/lib/combos';
 import chalk from 'chalk';
-import { IFlowData } from 'amplify-cli-shared-interfaces';
+import { IFlowData } from '@aws-amplify/amplify-cli-shared-interfaces';
 import { isYes, isInteractiveShell } from './flags';
 import { Validator } from './validators';
 import { printer } from './printer';
+import { Stopwatch } from './stopwatch';
 
 /**
  * Provides methods for collecting interactive customer responses from the shell
  */
 class AmplifyPrompter implements Prompter {
-  flowData: IFlowData|undefined; // interactive cli flow data journal
+  flowData: IFlowData | undefined; // interactive cli flow data journal
+  stopWatch: Stopwatch;
   constructor(private readonly prompter: typeof prompt = prompt, private readonly print: typeof printer = printer) {
     // construct a shim on top of enquirer to throw an error if it is called when stdin is non-interactive
     // enquirer does not export its PromptOptions type and this package does not depend on amplify-cli-core so using 'any' as the input type
@@ -31,25 +33,26 @@ class AmplifyPrompter implements Prompter {
       throw new Error(`Cannot prompt for [${opts.message}] in a non-interactive shell`);
     }) as typeof prompt;
     this.prompter = prompterShim;
+    this.stopWatch = new Stopwatch();
   }
 
-  private throwLoggedError = (message: string, errorMsg : string) : void => {
+  private throwLoggedError = (message: string, errorMsg: string): void => {
     this.flowData?.pushInteractiveFlow(message, errorMsg);
     throw new Error(errorMsg);
-  }
+  };
 
   setFlowData = (flowData: IFlowData): void => {
     this.flowData = flowData;
-  }
+  };
 
-  private pushInteractiveFlow = (promptString: string, input: unknown, redact : boolean =  false) => {
-    if ( isInteractiveShell ) {
-      if (this.flowData && input ) {
-        const finalInput = ( redact ) ? "*".repeat((input as string).length) : input;
+  private pushInteractiveFlow = (promptString: string, input: unknown, redact = false) => {
+    if (isInteractiveShell) {
+      if (this.flowData && input) {
+        const finalInput = redact ? '*'.repeat((input as string).length) : input;
         this.flowData.pushInteractiveFlow(promptString, finalInput);
       }
     }
-  }
+  };
 
   /**
    * Asks a continue prompt.
@@ -81,23 +84,23 @@ class AmplifyPrompter implements Prompter {
 
   private yesOrNoCommon = async (message: string, initial: boolean): Promise<boolean> => {
     let submitted = false;
+    this.stopWatch.start();
     const { result } = await this.prompter<{ result: boolean }>({
       type: 'confirm',
       name: 'result',
       message,
       // eslint-disable-next-line no-nested-ternary
-      format: value => (submitted ? (value ? 'yes' : 'no') : ''),
+      format: (value) => (submitted ? (value ? 'yes' : 'no') : ''),
       onSubmit: () => {
         submitted = true;
         return true;
       },
       initial,
     });
+    this.stopWatch.pause();
     this.pushInteractiveFlow(message, result);
     return result;
   };
-
- 
 
   /**
    * Prompt for an input.
@@ -113,20 +116,28 @@ class AmplifyPrompter implements Prompter {
    * @param options Prompt options. options.transform is required if T !== string
    * @returns The prompt response
    */
-  input = async <RS extends ReturnSize = 'one', T = string>(message: string, ...options: MaybeOptionalInputOptions<RS, T>): Promise<PromptReturn<RS, T>> => {
+  input = async <RS extends ReturnSize = 'one', T = string>(
+    message: string,
+    ...options: MaybeOptionalInputOptions<RS, T>
+  ): Promise<PromptReturn<RS, T>> => {
     const opts = options?.[0] ?? ({} as InputOptions<RS, T>);
-    const enquirerPromptType : EnquirerPromptType =  'hidden' in opts && opts.hidden ? EnquirerPromptType.INVISIBLE : opts.returnSize === 'many' ? EnquirerPromptType.LIST : EnquirerPromptType.INPUT;
+    const enquirerPromptType: EnquirerPromptType =
+      'hidden' in opts && opts.hidden
+        ? EnquirerPromptType.INVISIBLE
+        : opts.returnSize === 'many'
+        ? EnquirerPromptType.LIST
+        : EnquirerPromptType.INPUT;
 
     if (isYes) {
       if (opts.initial !== undefined) {
-        this.pushInteractiveFlow(message, opts.initial, enquirerPromptType == EnquirerPromptType.INVISIBLE);
+        this.pushInteractiveFlow(message, opts.initial, enquirerPromptType === EnquirerPromptType.INVISIBLE);
         return opts.initial as PromptReturn<RS, T>;
       }
       this.throwLoggedError(message, `Cannot prompt for [${message}] when '--yes' flag is set`);
     }
 
     const validator = (opts.returnSize === 'many' ? validateEachWith(opts.validate) : opts.validate) as ValidatorCast;
-
+    this.stopWatch.start();
     const { result } = await this.prompter<{ result: RS extends 'many' ? string[] : string }>({
       // eslint-disable-next-line no-nested-ternary
       type: enquirerPromptType,
@@ -139,18 +150,22 @@ class AmplifyPrompter implements Prompter {
       // @ts-ignore
       footer: opts.returnSize === 'many' ? 'Enter a comma-delimited list of values' : undefined,
     });
+    this.stopWatch.pause();
 
     if (typeof opts.transform === 'function') {
       let functionResult;
       if (Array.isArray(result)) {
-        functionResult = (await Promise.all(result.map(async part => (opts.transform as Function)(part) as T))) as unknown as PromptReturn<RS, T>;
+        functionResult = (await Promise.all(
+          result.map(async (part) => (opts.transform as Function)(part) as T),
+        )) as unknown as PromptReturn<RS, T>;
       } else {
         functionResult = opts.transform(result as string) as unknown as PromptReturn<RS, T>;
       }
-      this.pushInteractiveFlow(message, functionResult, enquirerPromptType == EnquirerPromptType.INVISIBLE );
+      this.pushInteractiveFlow(message, functionResult, enquirerPromptType == EnquirerPromptType.INVISIBLE);
       return functionResult;
     }
-    this.pushInteractiveFlow(message, result, enquirerPromptType == EnquirerPromptType.INVISIBLE );
+
+    this.pushInteractiveFlow(message, result, enquirerPromptType == EnquirerPromptType.INVISIBLE);
     return result as unknown as PromptReturn<RS, T>;
   };
 
@@ -180,20 +195,21 @@ class AmplifyPrompter implements Prompter {
     const opts = options?.[0] || {};
 
     // map string[] choices into GenericChoice<T>[]
-    const genericChoices: GenericChoice<T>[] = typeof choices[0] === 'string'
-      // this assertion is safe because the choice array can only be a string[] if the generic type is a string
-      ? ((choices as string[]).map(choice => ({ name: choice, value: choice })) as unknown as GenericChoice<T>[])
-      : (choices as GenericChoice<T>[]);
+    const genericChoices: GenericChoice<T>[] =
+      typeof choices[0] === 'string'
+        ? // this assertion is safe because the choice array can only be a string[] if the generic type is a string
+          ((choices as string[]).map((choice) => ({ name: choice, value: choice })) as unknown as GenericChoice<T>[])
+        : (choices as GenericChoice<T>[]);
 
     const initialIndexes = initialOptsToIndexes(
-      genericChoices.map(choice => choice.value),
+      genericChoices.map((choice) => choice.value),
       opts.initial,
     );
 
     // enquirer requires all choice values be strings, so set up a mapping of string => T
     // and format choices to conform to enquirer's interface
     const choiceValueMap = new Map<string, T>();
-    const enquirerChoices = genericChoices.map(choice => {
+    const enquirerChoices = genericChoices.map((choice) => {
       choiceValueMap.set(choice.name, choice.value);
       const enqResult = { name: choice.name, disabled: choice.disabled, hint: choice.hint };
       return enqResult;
@@ -202,12 +218,12 @@ class AmplifyPrompter implements Prompter {
     actions.ctrl.a = 'a';
 
     let result = genericChoices[0].name as string | string[];
-
+    this.stopWatch.start();
     if (choices.length === 1 && opts.returnSize !== 'many') {
       this.print.info(`Only one option for [${message}]. Selecting [${result}].`);
     } else if ('pickAtLeast' in opts && (opts.pickAtLeast || 0) >= choices.length) {
       // if you have to pick at least as many options as are available, select all of them and return without prompting
-      result = genericChoices.map(choice => choice.name);
+      result = genericChoices.map((choice) => choice.name);
       this.print.info(`Must pick at least ${opts.pickAtLeast} of ${choices.length} options. Selecting all options [${result}]`);
     } else if (isYes) {
       if (initialIndexes === undefined || (Array.isArray(initialIndexes) && initialIndexes.length === 0)) {
@@ -216,7 +232,7 @@ class AmplifyPrompter implements Prompter {
       if (typeof initialIndexes === 'number') {
         result = genericChoices[initialIndexes].name;
       } else {
-        result = initialIndexes.map(idx => genericChoices[idx].name);
+        result = initialIndexes.map((idx) => genericChoices[idx].name);
       }
     } else {
       // enquirer does not clear the stdout buffer on TSTP (Ctrl + Z) so this listener maps it to process.exit() which will clear the buffer
@@ -227,6 +243,10 @@ class AmplifyPrompter implements Prompter {
       // eslint-disable-next-line spellcheck/spell-checker
       process.once('SIGTSTP', sigTstpListener);
       ({ result } = await this.prompter<{ result: RS extends 'many' ? string[] : string }>({
+        // limit is not part of the TS interface but it's part of the JS API
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        limit: 10,
         // actions is not part of the TS interface but it's part of the JS API
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
@@ -248,7 +268,12 @@ class AmplifyPrompter implements Prompter {
         choices: enquirerChoices,
         pointer(_: unknown, i: number) {
           // this.state is bound to a property of enquirer's prompt object, it does not reference a property of AmplifyPrompter
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
           return this.state.index === i ? chalk.cyan('❯') : ' ';
+        },
+        indicator(_: unknown, choice: { enabled: boolean }) {
+          return choice.enabled ? chalk.cyan('●') : '○';
         },
         validate() {
           if (opts && ('pickAtLeast' in opts || 'pickAtMost' in opts)) {
@@ -275,14 +300,17 @@ class AmplifyPrompter implements Prompter {
     let loggedRet;
     if (Array.isArray(result)) {
       // result is an array
-      loggedRet = result.map(item => choiceValueMap.get(item) as T) as PromptReturn<RS, T>;
+      loggedRet = result.map((item) => choiceValueMap.get(item) as T) as PromptReturn<RS, T>;
     } else {
       // result is a string
       loggedRet = choiceValueMap.get(result as string) as PromptReturn<RS, T>;
     }
+    this.stopWatch.pause();
     this.pushInteractiveFlow(message, loggedRet);
     return loggedRet;
   };
+
+  getTotalPromptElapsedTime = (): number => this.stopWatch.getElapsedMilliseconds();
 }
 
 export const prompter: Prompter = new AmplifyPrompter();
@@ -293,9 +321,10 @@ export const prompter: Prompter = new AmplifyPrompter();
  * @param equals An optional function to determine if two elements are equal. If not specified, === is used
  * Note that choices are assumed to be unique by the equals function definition
  */
-export const byValues = <T>(selection: T[], equals: EqualsFunction<T> = defaultEquals): MultiFilterFunction<T> => (
-  choices: T[]
-  ) => selection.map(sel => choices.findIndex(choice => equals(choice, sel))).filter(idx => idx >= 0);
+export const byValues =
+  <T>(selection: T[], equals: EqualsFunction<T> = defaultEquals): MultiFilterFunction<T> =>
+  (choices: T[]) =>
+    selection.map((sel) => choices.findIndex((choice) => equals(choice, sel))).filter((idx) => idx >= 0);
 
 /**
  * Helper function to generate a function that will return an index of a single selection from a list
@@ -303,17 +332,19 @@ export const byValues = <T>(selection: T[], equals: EqualsFunction<T> = defaultE
  * @param equals An optional function to determine if two elements are equal. If not specified, === is used
  * Note that choices are assumed to be unique by the equals function definition
  */
-export const byValue = <T>(selection: T, equals: EqualsFunction<T> = defaultEquals): SingleFilterFunction<T> => (choices: T[]) => {
-  const idx = choices.findIndex(choice => equals(choice, selection));
-  return idx < 0 ? undefined : idx;
-};
+export const byValue =
+  <T>(selection: T, equals: EqualsFunction<T> = defaultEquals): SingleFilterFunction<T> =>
+  (choices: T[]) => {
+    const idx = choices.findIndex((choice) => equals(choice, selection));
+    return idx < 0 ? undefined : idx;
+  };
 
 const validateEachWith = (validator?: Validator) => async (input: string[]) => {
   if (!validator) {
     return true;
   }
-  const validationList = await Promise.all(input.map(part => part.trim()).map(async part => ({ part, result: await validator(part) })));
-  const firstInvalid = validationList.find(v => typeof v.result === 'string');
+  const validationList = await Promise.all(input.map((part) => part.trim()).map(async (part) => ({ part, result: await validator(part) })));
+  const firstInvalid = validationList.find((v) => typeof v.result === 'string');
   if (firstInvalid) {
     return `${firstInvalid.part} did not satisfy requirement ${firstInvalid.result}`;
   }
@@ -349,6 +380,7 @@ type Prompter = {
     ...options: MaybeOptionalPickOptions<RS, T>
   ) => Promise<PromptReturn<RS, T>>;
   setFlowData: (flowData: IFlowData) => void;
+  getTotalPromptElapsedTime: () => number;
 };
 
 // the following types are the building blocks of the method input types
@@ -357,8 +389,8 @@ type Prompter = {
 type MaybeAvailableHiddenInputOption<RS extends ReturnSize> = RS extends 'many'
   ? unknown
   : {
-    hidden?: boolean;
-  };
+      hidden?: boolean;
+    };
 
 // The initial selection for a pick prompt can be specified either by index or a selection function that generates indexes.
 // See byValues and byValue above
@@ -377,14 +409,14 @@ type InitialValueOption<T> = {
 type MultiSelectMinimum<RS extends ReturnSize> = RS extends 'one'
   ? unknown
   : {
-    pickAtLeast?: number;
-  };
+      pickAtLeast?: number;
+    };
 
 type MultiSelectMaximum<RS extends ReturnSize> = RS extends 'one'
   ? unknown
   : {
-    pickAtMost?: number;
-  };
+      pickAtMost?: number;
+    };
 
 type ValidateValueOption = {
   validate?: Validator;
@@ -400,11 +432,11 @@ type MaybeOptionalTransformOption<T> = T extends string ? Partial<TransformOptio
 
 type ReturnSizeOption<RS extends ReturnSize> = RS extends 'many'
   ? {
-    returnSize: 'many';
-  }
+      returnSize: 'many';
+    }
   : {
-    returnSize?: 'one';
-  };
+      returnSize?: 'one';
+    };
 
 type Choices<T> = T extends string ? GenericChoice<T>[] | string[] : GenericChoice<T>[];
 
@@ -441,7 +473,7 @@ type InputOptions<RS extends ReturnSize, T> = ReturnSizeOption<RS> &
 
 // abstraction over equirer prompt types
 enum EnquirerPromptType {
-    INVISIBLE = 'invisible',
-    LIST = 'list',
-    INPUT = 'input'
-};
+  INVISIBLE = 'invisible',
+  LIST = 'list',
+  INPUT = 'input',
+}

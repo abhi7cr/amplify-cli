@@ -1,15 +1,22 @@
-import _ from 'lodash';
-import ora from 'ora';
-import sequential from 'promise-sequential';
 import {
-  stateManager, $TSAny, $TSMeta, $TSContext, $TSTeamProviderInfo,
-} from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
-import { getProviderPlugins } from './extensions/amplify-helpers/get-provider-plugins';
-import { ManuallyTimedCodePath } from './domain/amplify-usageData/IUsageData';
+  $TSAny,
+  $TSContext,
+  $TSMeta,
+  AmplifyFault,
+  LocalEnvInfo,
+  ManuallyTimedCodePath,
+  constants,
+  spinner,
+  stateManager,
+} from '@aws-amplify/amplify-cli-core';
+import { IEnvironmentParameterManager, ServiceDownloadHandler, ensureEnvParamManager } from '@aws-amplify/amplify-environment-parameters';
+import { printer } from '@aws-amplify/amplify-prompts';
+import sequential from 'promise-sequential';
 
-const spinner = ora('');
-const CATEGORIES = 'categories';
+import { Context } from './domain/context';
+import { raisePrePushEvent } from './execution-manager';
+import { getProviderPlugins } from './extensions/amplify-helpers/get-provider-plugins';
+import { verifyExpectedEnvParams } from './utils/verify-expected-env-params';
 
 /**
  * Entry point for initializing an environment. Delegates out to plugins initEnv function
@@ -19,52 +26,86 @@ export const initializeEnv = async (
   currentAmplifyMeta: $TSMeta = stateManager.currentMetaFileExists() ? stateManager.getCurrentMeta() : undefined,
 ): Promise<void> => {
   const currentEnv = context.exeInfo.localEnvInfo.envName;
-  const isPulling = context.input.command === 'pull' || (context.input.command === 'env' && context.input.subCommands[0] === 'pull');
+  const isPulling = context.input.command === 'pull' || (context.input.command === 'env' && context.input.subCommands?.[0] === 'pull');
 
   try {
     const { projectPath } = context.exeInfo.localEnvInfo;
 
-    const amplifyMeta: $TSMeta = {};
+    const amplifyMeta: $TSMeta = { providers: {} };
     const teamProviderInfo = stateManager.getTeamProviderInfo(projectPath);
 
-    amplifyMeta.providers = _.pick(teamProviderInfo[currentEnv], 'awscloudformation');
+    amplifyMeta.providers.awscloudformation = teamProviderInfo?.[currentEnv]?.awscloudformation;
+
+    const envParamManager = (await ensureEnvParamManager(currentEnv)).instance;
+    const { providers } = stateManager.getProjectConfig(undefined, { throwIfNotExist: false, default: {} });
+    const CloudFormationProviderName = constants.DEFAULT_PROVIDER;
+    if (Array.isArray(providers) && providers.find((value) => value === CloudFormationProviderName)) {
+      const downloadHandler: ServiceDownloadHandler = await context.amplify.invokePluginMethod(
+        context,
+        CloudFormationProviderName,
+        undefined,
+        'getEnvParametersDownloadHandler',
+        [context],
+      );
+      await envParamManager.downloadParameters(downloadHandler);
+    }
 
     if (!context.exeInfo.restoreBackend) {
-      populateAmplifyMeta(projectPath, amplifyMeta);
-      populateCategoriesMeta(projectPath, amplifyMeta, teamProviderInfo[currentEnv], 'hosting', 'ElasticContainer');
+      mergeBackendConfigIntoAmplifyMeta(projectPath, amplifyMeta);
+      mergeCategoryEnvParamsIntoAmplifyMeta(envParamManager, amplifyMeta, 'hosting', 'ElasticContainer');
+      stateManager.setMeta(projectPath, amplifyMeta);
     }
 
     const categoryInitializationTasks: (() => Promise<$TSAny>)[] = [];
 
     const initializedCategories = Object.keys(stateManager.getMeta());
     const categoryPluginInfoList = context.amplify.getAllCategoryPluginInfo(context);
-    const availableCategories = Object.keys(categoryPluginInfoList).filter(key => initializedCategories.includes(key));
+    const availableCategories = Object.keys(categoryPluginInfoList).filter((key) => initializedCategories.includes(key));
 
-    availableCategories.forEach(category => {
-      categoryPluginInfoList[category].forEach(pluginInfo => {
-        try {
-          // eslint-disable-next-line import/no-dynamic-require, global-require, @typescript-eslint/no-var-requires
-          const { initEnv } = require(pluginInfo.packageLocation);
+    const importCategoryPluginAndQueueInitEnvTask = async (pluginInfo, category): Promise<void> => {
+      try {
+        const { initEnv } = await import(pluginInfo.packageLocation);
 
-          if (initEnv) {
-            categoryInitializationTasks.push(() => initEnv(context));
-          }
-        } catch (e) {
-          context.print.warning(`Could not load initEnv for ${category}`);
+        if (initEnv) {
+          categoryInitializationTasks.push(() => initEnv(context));
         }
-      });
-    });
+      } catch (e) {
+        throw new AmplifyFault(
+          'PluginNotLoadedFault',
+          {
+            message: `Could not load plugin for category ${category}.`,
+            resolution: `Review the error message and stack trace for additional information.`,
+          },
+          e,
+        );
+      }
+    };
+    for (const category of availableCategories) {
+      for (const pluginInfo of categoryPluginInfoList[category]) {
+        await importCategoryPluginAndQueueInitEnvTask(pluginInfo, category);
+      }
+    }
 
     const providerPlugins = getProviderPlugins(context);
 
     const initializationTasks: (() => Promise<$TSAny>)[] = [];
     const providerPushTasks: (() => Promise<$TSAny>)[] = [];
 
-    context.exeInfo.projectConfig.providers.forEach(provider => {
-      // eslint-disable-next-line import/no-dynamic-require, global-require, @typescript-eslint/no-var-requires
-      const providerModule = require(providerPlugins[provider]);
-      initializationTasks.push(() => providerModule.initEnv(context, amplifyMeta.providers[provider]));
-    });
+    for (const provider of context.exeInfo?.projectConfig?.providers) {
+      try {
+        const providerModule = await import(providerPlugins[provider]);
+        initializationTasks.push(() => providerModule.initEnv(context, amplifyMeta.providers[provider]));
+      } catch (e) {
+        throw new AmplifyFault(
+          'PluginNotLoadedFault',
+          {
+            message: `Could not load plugin for provider ${provider}.`,
+            resolution: 'Review the error message and stack trace for additional information.',
+          },
+          e,
+        );
+      }
+    }
 
     spinner.start(
       isPulling ? `Fetching updates to backend environment: ${currentEnv} from the cloud.` : `Initializing your environment: ${currentEnv}`,
@@ -74,9 +115,15 @@ export const initializeEnv = async (
       context.usageData.startCodePathTimer(ManuallyTimedCodePath.INIT_ENV_PLATFORM);
       await sequential(initializationTasks);
     } catch (e) {
-      printer.error(`Could not initialize '${currentEnv}': ${e.message}`);
-      context.usageData.emitError(e);
-      process.exit(1);
+      spinner.fail();
+      throw new AmplifyFault(
+        'ProjectInitFault',
+        {
+          message: `Could not initialize platform for '${currentEnv}': ${e.message}`,
+          resolution: 'Review the error message and stack trace for additional information.',
+        },
+        e,
+      );
     } finally {
       context.usageData.stopCodePathTimer(ManuallyTimedCodePath.INIT_ENV_PLATFORM);
     }
@@ -87,12 +134,24 @@ export const initializeEnv = async (
 
     const projectDetails = context.amplify.getProjectDetails();
 
-    context.exeInfo = context.exeInfo || {};
+    context.exeInfo ??= { inputParams: {}, localEnvInfo: {} as unknown as LocalEnvInfo };
     Object.assign(context.exeInfo, projectDetails);
 
-    context.usageData.startCodePathTimer(ManuallyTimedCodePath.INIT_ENV_CATEGORIES);
-    await sequential(categoryInitializationTasks);
-    context.usageData.stopCodePathTimer(ManuallyTimedCodePath.INIT_ENV_CATEGORIES);
+    try {
+      context.usageData.startCodePathTimer(ManuallyTimedCodePath.INIT_ENV_CATEGORIES);
+      await sequential(categoryInitializationTasks);
+    } catch (e) {
+      throw new AmplifyFault(
+        'ProjectInitFault',
+        {
+          message: `Could not initialize categories for '${currentEnv}': ${e.message}`,
+          resolution: 'Review the error message and stack trace for additional information.',
+        },
+        e,
+      );
+    } finally {
+      context.usageData.stopCodePathTimer(ManuallyTimedCodePath.INIT_ENV_CATEGORIES);
+    }
 
     if (context.exeInfo.forcePush === undefined) {
       context.exeInfo.forcePush = await context.amplify.confirmPrompt(
@@ -101,11 +160,12 @@ export const initializeEnv = async (
     }
 
     if (context.exeInfo.forcePush) {
-      // eslint-disable-next-line no-restricted-syntax
+      await verifyExpectedEnvParams(context);
+      // raising PrePush event here because init with --forcePush will do a push after initializing
+      await raisePrePushEvent(context as unknown as Context);
       for (const provider of context.exeInfo.projectConfig.providers) {
-        // eslint-disable-next-line import/no-dynamic-require, global-require, @typescript-eslint/no-var-requires
-        const providerModule = require(providerPlugins[provider]);
-        // eslint-disable-next-line no-await-in-loop
+        const providerModule = await import(providerPlugins[provider]);
+
         const resourceDefinition = await context.amplify.getResourceStatus(undefined, undefined, provider);
         providerPushTasks.push(() => providerModule.pushResources(context, resourceDefinition));
       }
@@ -118,26 +178,27 @@ export const initializeEnv = async (
 
     printer.success(isPulling ? '' : 'Initialized your environment successfully.');
   } catch (e) {
+    // let the error propagate up after we safely exit the spinner
     spinner.fail('There was an error initializing your environment.');
     throw e;
   }
 };
 
-const populateAmplifyMeta = (projectPath: string, amplifyMeta: $TSMeta): void => {
+const mergeBackendConfigIntoAmplifyMeta = (projectPath: string, amplifyMeta: $TSMeta): void => {
   const backendConfig = stateManager.getBackendConfig(projectPath);
   Object.assign(amplifyMeta, backendConfig);
-  stateManager.setMeta(projectPath, amplifyMeta);
 };
 
-const populateCategoriesMeta = (
-  projectPath: string,
+const mergeCategoryEnvParamsIntoAmplifyMeta = (
+  envParamManager: IEnvironmentParameterManager,
   amplifyMeta: $TSMeta,
-  teamProviderInfo: $TSTeamProviderInfo,
   category: string,
   serviceName: string,
 ): void => {
-  if (amplifyMeta[category]?.[serviceName] && teamProviderInfo[CATEGORIES]?.[category]?.[serviceName]) {
-    Object.assign(amplifyMeta[category][serviceName], teamProviderInfo[CATEGORIES][category][serviceName]);
-    stateManager.setMeta(projectPath, amplifyMeta);
+  if (
+    envParamManager.hasResourceParamManager(category, serviceName) &&
+    envParamManager.getResourceParamManager(category, serviceName).hasAnyParams()
+  ) {
+    Object.assign(amplifyMeta[category][serviceName], envParamManager.getResourceParamManager(category, serviceName).getAllParams());
   }
 };

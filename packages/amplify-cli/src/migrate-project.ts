@@ -3,7 +3,16 @@ import * as path from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
 import { coerce, lt } from 'semver';
-import { pathManager, stateManager, $TSObject, $TSContext, JSONUtilities, $TSAny } from 'amplify-cli-core';
+import {
+  pathManager,
+  stateManager,
+  $TSObject,
+  $TSContext,
+  JSONUtilities,
+  $TSAny,
+  MigrationInfo,
+  LocalEnvInfo,
+} from '@aws-amplify/amplify-cli-core';
 import { makeId } from './extensions/amplify-helpers/make-id';
 import { amplifyCLIConstants } from './extensions/amplify-helpers/constants';
 import { insertAmplifyIgnore } from './extensions/amplify-helpers/git-manager';
@@ -16,7 +25,10 @@ const confirmMigrateMessage =
 const secondConfirmMessage =
   'The CLI would be modifying your Amplify backend configuration files as a part of the migration process, hence we highly recommend backing up your existing local project before moving ahead. Are you sure you want to continue?';
 
-export async function migrateProject(context: $TSContext) {
+/**
+ * Legacy project migration (not extensibility migration)
+ */
+export const migrateProject = async (context: $TSContext): Promise<void> => {
   const projectPath = pathManager.findProjectRoot();
   if (!projectPath) {
     // New project, hence not able to find the amplify dir
@@ -38,10 +50,10 @@ export async function migrateProject(context: $TSContext) {
     if (await context.prompt.confirm(confirmMigrateMessage)) {
       const infoMessage =
         `${chalk.bold('The CLI is going to take the following actions during the migration step:')}\n` +
-        '\n1. If you have a GraphQL API, we will update the corresponding Cloudformation stack to support larger annotated schemas and custom resolvers.\n' +
-        'In this process, we will be making Cloudformation API calls to update your GraphQL API Cloudformation stack. This operation will result in deletion of your AppSync resolvers and then the creation of new ones and for a brief while your AppSync API will be unavailable until the migration finishes\n' +
-        '\n2. We will be updating your local Cloudformation files present inside the ‘amplify/‘ directory of your app project, for all the added categories so that it supports multiple environments\n' +
-        '\n3. After the migration completes, we will give you the option to either push these Cloudformation files right away or you could inspect them yourselves and later push the updated Cloudformation files to the cloud\n' +
+        '\n1. If you have a GraphQL API, we will update the corresponding CloudFormation stack to support larger annotated schemas and custom resolvers.\n' +
+        'In this process, we will be making CloudFormation API calls to update your GraphQL API CloudFormation stack. This operation will result in deletion of your AppSync resolvers and then the creation of new ones and for a brief while your AppSync API will be unavailable until the migration finishes\n' +
+        '\n2. We will be updating your local CloudFormation files present inside the `amplify` directory of your app project, for all the added categories so that it supports multiple environments\n' +
+        '\n3. After the migration completes, we will give you the option to either push these CloudFormation files right away or you could inspect them yourselves and later push the updated CloudFormation files to the cloud\n' +
         '\n4. If for any reason the migration fails, the CLI will rollback your cloud and local changes and you can take a look at https://aws-amplify.github.io/docs/cli/migrate?sdk=js for manually migrating your project so that it’s compatible with the latest version of the CLI\n' +
         '\n5. ALL THE ABOVE MENTIONED OPERATIONS WILL NOT DELETE ANY DATA FROM ANY OF YOUR DATA STORES\n' +
         `\n${chalk.bold('Before the migration, please be aware of the following things:')}\n` +
@@ -57,14 +69,14 @@ export async function migrateProject(context: $TSContext) {
 
       if (await context.prompt.confirm(secondConfirmMessage)) {
         // Currently there are only two project configuration versions, so call this method directly
-        // If more versions are involved, switch to apropriate migration method
+        // If more versions are involved, switch to appropriate migration method
         await migrateFrom0To1(context, projectPath, projectConfig);
       }
     }
   }
-}
+};
 
-async function migrateFrom0To1(context: $TSContext, projectPath, projectConfig) {
+const migrateFrom0To1 = async (context: $TSContext, projectPath, projectConfig): Promise<void> => {
   let amplifyDirPath;
   let backupAmplifyDirPath;
   try {
@@ -73,14 +85,16 @@ async function migrateFrom0To1(context: $TSContext, projectPath, projectConfig) 
     context.migrationInfo = generateMigrationInfo(projectConfig, projectPath);
 
     // Give each category a chance to migrate their respective files
+    // eslint-disable-next-line @typescript-eslint/ban-types
     const categoryMigrationTasks: Function[] = [];
 
     const categoryPluginInfoList = context.amplify.getAllCategoryPluginInfo(context);
     let apiMigrateFunction;
 
-    Object.keys(categoryPluginInfoList).forEach(category => {
-      categoryPluginInfoList[category].forEach(pluginInfo => {
+    Object.keys(categoryPluginInfoList).forEach((category) => {
+      categoryPluginInfoList[category].forEach((pluginInfo) => {
         try {
+          // eslint-disable-next-line
           const { migrate } = require(pluginInfo.packageLocation);
           if (migrate) {
             if (category !== 'api') {
@@ -104,11 +118,7 @@ async function migrateFrom0To1(context: $TSContext, projectPath, projectConfig) 
     persistMigrationContext(context.migrationInfo);
     // await sequential(categoryMigrationTasks);
     for (let i = 0; i < categoryMigrationTasks.length; i++) {
-      try {
-        await categoryMigrationTasks[i]();
-      } catch (e) {
-        throw e;
-      }
+      await categoryMigrationTasks[i]();
     }
 
     removeAmplifyRCFile(projectPath);
@@ -117,7 +127,7 @@ async function migrateFrom0To1(context: $TSContext, projectPath, projectConfig) 
     spinner.succeed('Migrated your project successfully.');
 
     context.print.warning(
-      "If you have added functions or interactions category to your project, please check the 'Auto-migration' section at https://github.com/aws-amplify/docs/blob/master/cli/migrate.md",
+      "If you have added functions or interactions category to your project, please check the 'Auto-migration' section at https://github.com/aws-amplify/docs/blob/dev/cli/migrate.md",
     );
 
     // Run the `amplify push` flow
@@ -133,9 +143,9 @@ async function migrateFrom0To1(context: $TSContext, projectPath, projectConfig) 
   } finally {
     cleanUp(backupAmplifyDirPath);
   }
-}
+};
 
-function backup(amplifyDirPath: string, projectPath: string) {
+const backup = (amplifyDirPath: string, projectPath: string): $TSAny => {
   const backupAmplifyDirName = `${amplifyCLIConstants.AmplifyCLIDirName}-${makeId(5)}`;
   const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
 
@@ -151,37 +161,37 @@ function backup(amplifyDirPath: string, projectPath: string) {
   fs.copySync(amplifyDirPath, backupAmplifyDirPath);
 
   return backupAmplifyDirPath;
-}
+};
 
-function rollback(amplifyDirPath, backupAmplifyDirPath) {
+const rollback = (amplifyDirPath: string, backupAmplifyDirPath: string): void => {
   if (backupAmplifyDirPath && fs.existsSync(backupAmplifyDirPath)) {
     fs.removeSync(amplifyDirPath);
     fs.moveSync(backupAmplifyDirPath, amplifyDirPath);
   }
-}
+};
 
-function cleanUp(backupAmplifyDirPath) {
+const cleanUp = (backupAmplifyDirPath: string): void => {
   fs.removeSync(backupAmplifyDirPath);
-}
+};
 
-function generateMigrationInfo(projectConfig, projectPath) {
-  const migrationInfo: $TSObject = {
+const generateMigrationInfo = (projectConfig: $TSAny, projectPath: string) => {
+  const meta = stateManager.getMeta(projectPath);
+  const migrationInfo: MigrationInfo = {
     projectPath,
     initVersion: projectConfig.version,
     newVersion: amplifyCLIConstants.CURRENT_PROJECT_CONFIG_VERSION,
+    amplifyMeta: meta,
+    currentAmplifyMeta: stateManager.getCurrentMeta(projectPath),
+    projectConfig: generateNewProjectConfig(projectConfig),
+    localEnvInfo: generateLocalEnvInfo(projectConfig),
+    localAwsInfo: generateLocalAwsInfo(projectPath),
+    teamProviderInfo: generateTeamProviderInfo(meta),
+    backendConfig: generateBackendConfig(meta),
   };
-  migrationInfo.amplifyMeta = stateManager.getMeta(projectPath);
-  migrationInfo.currentAmplifyMeta = stateManager.getCurrentMeta(projectPath);
-  migrationInfo.projectConfig = generateNewProjectConfig(projectConfig);
-  migrationInfo.localEnvInfo = generateLocalEnvInfo(projectConfig);
-  migrationInfo.localAwsInfo = generateLocalAwsInfo(projectPath);
-  migrationInfo.teamProviderInfo = generateTeamProviderInfo(migrationInfo.amplifyMeta);
-  migrationInfo.backendConfig = generateBackendConfig(migrationInfo.amplifyMeta);
-
   return migrationInfo;
-}
+};
 
-function persistMigrationContext(migrationInfo) {
+const persistMigrationContext = (migrationInfo: $TSAny): void => {
   stateManager.setMeta(migrationInfo.projectPath, migrationInfo.amplifyMeta);
   stateManager.setCurrentMeta(migrationInfo.projectPath, migrationInfo.currentAmplifyMeta);
   stateManager.setProjectConfig(migrationInfo.projectPath, migrationInfo.projectConfig);
@@ -201,9 +211,9 @@ function persistMigrationContext(migrationInfo) {
   if (migrationInfo.backendConfig) {
     stateManager.setBackendConfig(migrationInfo.projectPath, migrationInfo.backendConfig);
   }
-}
+};
 
-function generateNewProjectConfig(projectConfig) {
+const generateNewProjectConfig = (projectConfig: $TSAny): $TSAny => {
   const newProjectConfig: $TSObject = {};
 
   Object.assign(newProjectConfig, projectConfig);
@@ -230,17 +240,17 @@ function generateNewProjectConfig(projectConfig) {
   newProjectConfig.providers = providers;
 
   return newProjectConfig;
-}
+};
 
-function generateLocalEnvInfo(projectConfig) {
-  return {
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+const generateLocalEnvInfo = (projectConfig: $TSAny) =>
+  ({
     projectPath: projectConfig.projectPath,
     defaultEditor: projectConfig.defaultEditor,
     envName: 'NONE',
-  };
-}
+  } as unknown as LocalEnvInfo);
 
-function generateLocalAwsInfo(projectPath) {
+const generateLocalAwsInfo = (projectPath: string): $TSAny => {
   let newAwsInfo;
 
   const awsInfoFilePath = path.join(pathManager.getDotConfigDirPath(projectPath), 'aws-info.json');
@@ -256,20 +266,18 @@ function generateLocalAwsInfo(projectPath) {
   }
 
   return newAwsInfo;
-}
+};
 
-function generateTeamProviderInfo(amplifyMeta) {
-  return { NONE: amplifyMeta.providers };
-}
+const generateTeamProviderInfo = (amplifyMeta: $TSAny): $TSAny => ({ NONE: amplifyMeta.providers });
 
-function generateBackendConfig(amplifyMeta) {
+const generateBackendConfig = (amplifyMeta: $TSAny): $TSAny => {
   const backendConfig = {};
 
-  Object.keys(amplifyMeta).forEach(category => {
+  Object.keys(amplifyMeta).forEach((category) => {
     if (category !== 'providers') {
       backendConfig[category] = {};
 
-      Object.keys(amplifyMeta[category]).forEach(resourceName => {
+      Object.keys(amplifyMeta[category]).forEach((resourceName) => {
         backendConfig[category][resourceName] = {};
         backendConfig[category][resourceName].service = amplifyMeta[category][resourceName].service;
         backendConfig[category][resourceName].providerPlugin = amplifyMeta[category][resourceName].providerPlugin;
@@ -289,15 +297,15 @@ function generateBackendConfig(amplifyMeta) {
   });
 
   return backendConfig;
-}
+};
 
-function removeAmplifyRCFile(projectPath) {
+const removeAmplifyRCFile = (projectPath: string): void => {
   const amplifyRcFilePath = pathManager.getAmplifyRcFilePath(projectPath);
   fs.removeSync(amplifyRcFilePath);
-}
+};
 
-function updateGitIgnoreFile(projectPath) {
+const updateGitIgnoreFile = (projectPath: string): void => {
   const gitIgnoreFilePath = pathManager.getGitIgnoreFilePath(projectPath);
 
   insertAmplifyIgnore(gitIgnoreFilePath);
-}
+};

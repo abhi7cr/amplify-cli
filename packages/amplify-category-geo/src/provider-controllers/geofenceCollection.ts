@@ -1,19 +1,25 @@
-import { createGeofenceCollectionResource, modifyGeofenceCollectionResource, getCurrentGeofenceCollectionParameters } from '../service-utils/geofenceCollectionUtils';
-import { removeWalkthrough } from '../service-walkthroughs/removeWalkthrough';
+import { $TSContext } from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import { category } from '../constants';
-import { updateDefaultGeofenceCollectionWalkthrough, createGeofenceCollectionWalkthrough, updateGeofenceCollectionWalkthrough } from '../service-walkthroughs/geofenceCollectionWalkthrough';
-import { convertToCompleteGeofenceCollectionParams, GeofenceCollectionParameters } from '../service-utils/geofenceCollectionParams';
-import { $TSAny, $TSContext } from 'amplify-cli-core';
-import { printNextStepsSuccessMessage, setProviderContext } from './index';
 import { ServiceName } from '../service-utils/constants';
-import { printer } from 'amplify-prompts';
+import { convertToCompleteGeofenceCollectionParams, GeofenceCollectionParameters } from '../service-utils/geofenceCollectionParams';
+import {
+  createGeofenceCollectionResource,
+  getCurrentGeofenceCollectionParameters,
+  modifyGeofenceCollectionResource,
+} from '../service-utils/geofenceCollectionUtils';
+import {
+  createGeofenceCollectionWalkthrough,
+  updateDefaultGeofenceCollectionWalkthrough,
+  updateGeofenceCollectionWalkthrough,
+} from '../service-walkthroughs/geofenceCollectionWalkthrough';
+import { removeWalkthrough } from '../service-walkthroughs/removeWalkthrough';
+import { printNextStepsSuccessMessage, setProviderContext } from './index';
 
-export const addGeofenceCollectionResource = async (
-  context: $TSContext
-): Promise<string> => {
+export const addGeofenceCollectionResource = async (context: $TSContext): Promise<string> => {
   // initialize the Geofence Collection parameters
   const geofenceCollectionParams: Partial<GeofenceCollectionParameters> = {
-    providerContext: setProviderContext(context, ServiceName.GeofenceCollection)
+    providerContext: setProviderContext(context, ServiceName.GeofenceCollection),
   };
   // populate the parameters for the resource
   await createGeofenceCollectionWalkthrough(context, geofenceCollectionParams);
@@ -22,15 +28,13 @@ export const addGeofenceCollectionResource = async (
   await createGeofenceCollectionResource(context, completeParameters);
 
   printer.success(`Successfully added resource ${completeParameters.name} locally.`);
-  printNextStepsSuccessMessage(context);
+  printNextStepsSuccessMessage();
   return completeParameters.name;
 };
 
-export const updateGeofenceCollectionResource = async (
-  context: $TSContext
-): Promise<string> => {
+export const updateGeofenceCollectionResource = async (context: $TSContext): Promise<string> => {
   const geofenceCollectionParams: Partial<GeofenceCollectionParameters> = {
-    providerContext: setProviderContext(context, ServiceName.GeofenceCollection)
+    providerContext: setProviderContext(context, ServiceName.GeofenceCollection),
   };
   // populate the parameters for the resource
   await updateGeofenceCollectionWalkthrough(context, geofenceCollectionParams);
@@ -39,16 +43,14 @@ export const updateGeofenceCollectionResource = async (
   await modifyGeofenceCollectionResource(context, completeParameters);
 
   printer.success(`Successfully updated resource ${geofenceCollectionParams.name} locally.`);
-  printNextStepsSuccessMessage(context);
+  printNextStepsSuccessMessage();
   return completeParameters.name;
 };
 
-export const removeGeofenceCollectionResource = async (
-  context: any
-): Promise<string | undefined> => {
+export const removeGeofenceCollectionResource = async (context: $TSContext): Promise<string | undefined> => {
   const { amplify } = context;
-  const resourceToRemove = await removeWalkthrough(context, ServiceName.GeofenceCollection);
-  if (!resourceToRemove) return;
+  const resourceToRemove = await removeWalkthrough(ServiceName.GeofenceCollection);
+  if (!resourceToRemove) return undefined;
 
   const resourceParameters = await getCurrentGeofenceCollectionParameters(resourceToRemove);
 
@@ -59,6 +61,6 @@ export const removeGeofenceCollectionResource = async (
   }
   context.amplify.updateBackendConfigAfterResourceRemove(category, resourceToRemove);
 
-  printNextStepsSuccessMessage(context);
+  printNextStepsSuccessMessage();
   return resourceToRemove;
 };

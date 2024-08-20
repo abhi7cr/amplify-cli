@@ -13,9 +13,9 @@ import {
   amplifyPull,
   getProjectMeta,
   sleep,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import S3 from 'aws-sdk/clients/s3';
-import { DeploymentState, DeploymentStatus, JSONUtilities } from 'amplify-cli-core';
+import { DeploymentState, DeploymentStatus, JSONUtilities } from '@aws-amplify/amplify-cli-core';
 
 describe('Schema iterative update - locking', () => {
   let projectRoot: string;
@@ -52,9 +52,7 @@ describe('Schema iterative update - locking', () => {
     const appId = getAppId(projectRoot);
     expect(appId).toBeDefined();
 
-    let projectRootPull;
-
-    projectRootPull = await createNewProjectDir('iterlock-pull');
+    const projectRootPull = await createNewProjectDir('iterlock-pull');
 
     await amplifyPull(projectRootPull, { override: false, emptyDir: true, appId });
 
@@ -77,7 +75,7 @@ describe('Schema iterative update - locking', () => {
     let retry = 0;
     const maxRetries = 3;
     const retryDelay = 3000;
-    const stateFileName: string = 'deployment-state.json';
+    const stateFileName = 'deployment-state.json';
 
     while (retry < maxRetries || !lockFileExists) {
       try {

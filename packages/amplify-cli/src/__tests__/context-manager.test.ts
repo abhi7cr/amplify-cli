@@ -1,40 +1,35 @@
-import { stateManager } from 'amplify-cli-core';
-import { Input } from '../domain/input';
-import { PluginPlatform } from '../domain/plugin-platform';
+import { PluginPlatform, stateManager, PluginInfo, PluginManifest } from '@aws-amplify/amplify-cli-core';
+import { CLIInput as CommandLineInput } from '../domain/command-input';
 import * as appConfig from '../app-config';
 import { constructContext, attachUsageData } from '../context-manager';
 import { Context } from '../domain/context';
-import { PluginInfo } from '../domain/plugin-info';
-import { PluginManifest } from '../domain/plugin-manifest';
-import { UsageData, NoUsageData} from '../domain/amplify-usageData';
+import { UsageData, NoUsageData } from '../domain/amplify-usageData';
 
 jest.mock('../domain/amplify-usageData/', () => ({
   UsageData: {
     Instance: {
       setIsHeadless: jest.fn(),
-      init : jest.fn(),
+      init: jest.fn(),
     },
   },
   NoUsageData: {
-    Instance:  {
-        setIsHeadless: jest.fn(),
-        init : jest.fn(),
+    Instance: {
+      setIsHeadless: jest.fn(),
+      init: jest.fn(),
     },
   },
   CLINoFlowReport: {
     instance: jest.fn(() => ({
       setIsHeadless: jest.fn(),
-    }))
+    })),
   },
 }));
 jest.mock('../app-config');
-jest.mock('amplify-cli-core');
-
 describe('test attachUsageData', () => {
   const version = 'latestVersion';
   const mockContext = jest.createMockFromModule<Context>('../domain/context');
 
-  mockContext.input = new Input([
+  mockContext.input = new CommandLineInput([
     '/Users/userName/.nvm/versions/node/v8.11.4/bin/node',
     '/Users/userName/.nvm/versions/node/v8.11.4/bin/amplify',
     'status',
@@ -42,22 +37,23 @@ describe('test attachUsageData', () => {
   mockContext.pluginPlatform = new PluginPlatform();
   mockContext.pluginPlatform.plugins.core = [new PluginInfo('', version, '', new PluginManifest('', ''))];
   mockContext.usageData = {
-    init : jest.fn(),
-    setIsHeadless : jest.fn(),
-    emitError : jest.fn(), 
-    emitAbort : jest.fn(), 
-    emitSuccess : jest.fn(),
-    startCodePathTimer : jest.fn(), 
-    stopCodePathTimer : jest.fn(), 
-    pushHeadlessFlow : jest.fn(), 
-    pushInteractiveFlow : jest.fn(), 
-    getFlowReport : jest.fn(), 
-    assignProjectIdentifier : jest.fn(),
-  }
+    init: jest.fn(),
+    setIsHeadless: jest.fn(),
+    emitError: jest.fn(),
+    emitAbort: jest.fn(),
+    emitSuccess: jest.fn(),
+    startCodePathTimer: jest.fn(),
+    stopCodePathTimer: jest.fn(),
+    pushHeadlessFlow: jest.fn(),
+    pushInteractiveFlow: jest.fn(),
+    getFlowReport: jest.fn(),
+    assignProjectIdentifier: jest.fn(),
+    getUsageDataPayload: jest.fn(),
+    calculatePushNormalizationFactor: jest.fn(),
+    getSessionUuid: jest.fn(),
+  };
 
-  const stateManagerMocked = stateManager as jest.Mocked<typeof stateManager>;
-  stateManagerMocked.metaFileExists.mockReturnValue(true);
-  stateManagerMocked.getMeta.mockReturnValue({
+  jest.spyOn(stateManager, 'getMeta').mockReturnValue({
     providers: {
       awscloudformation: {
         // eslint-disable-next-line spellcheck/spell-checker
@@ -65,6 +61,7 @@ describe('test attachUsageData', () => {
       },
     },
   });
+  jest.spyOn(stateManager, 'metaFileExists').mockReturnValue(true);
 
   it('constructContext', () => {
     const context = constructContext(mockContext.pluginPlatform, mockContext.input);
@@ -116,6 +113,5 @@ describe('test attachUsageData', () => {
       {},
       ts,
     );
-
   });
 });

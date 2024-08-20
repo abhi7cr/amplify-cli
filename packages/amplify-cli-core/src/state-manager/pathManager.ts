@@ -1,8 +1,8 @@
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import { homedir } from 'os';
-import { NotInitializedError } from '../errors';
-import { overriddenCategories } from '..';
+// eslint-disable-next-line import/no-cycle
+import { overriddenCategories, projectNotInitializedError, stateManager } from '..';
 
 export const PathConstants = {
   // in home directory
@@ -32,6 +32,7 @@ export const PathConstants = {
   // FileNames
   AmplifyAdminConfigFileName: 'config.json',
 
+  // eslint-disable-next-line spellcheck/spell-checker
   AmplifyRcFileName: '.amplifyrc',
   GitIgnoreFileName: '.gitignore',
   ProjectConfigFileName: 'project-config.json',
@@ -65,8 +66,12 @@ export const PathConstants = {
   ExportManifestJsonFilename: 'amplify-export-manifest.json',
   ExportTagsJsonFileName: 'export-tags.json',
   ExportCategoryStackMappingJsonFilename: 'category-stack-mapping.json',
+  OverrideFileName: 'override.ts',
 };
 
+/**
+ * Utility class for normalizing paths to various files used by Amplify
+ */
 export class PathManager {
   private readonly homeDotAmplifyDirPath: string;
   // private readonly projectRootPath: string | undefined;
@@ -77,7 +82,8 @@ export class PathManager {
   }
 
   getAmplifyPackageLibDirPath = (packageName: string): string => {
-    const result = path.join(this.getAmplifyLibRoot(), packageName);
+    const descopedPackageName = packageName.replace(/^@/, '').replace(/\//, '-');
+    const result = path.join(this.getAmplifyLibRoot(), descopedPackageName);
     if (!process.env.AMPLIFY_SUPPRESS_NO_PKG_LIB && !fs.pathExistsSync(result)) {
       throw new Error(`Package lib at ${result} does not exist.`);
     }
@@ -114,6 +120,10 @@ export class PathManager {
 
   getGitIgnoreFilePath = (projectPath?: string): string => this.constructPath(projectPath, [PathConstants.GitIgnoreFileName]);
 
+  /**
+   * Returns the full path to the `team-provider-info.json` file
+   * @deprecated Use envParamManager from amplify-environment-parameters
+   */
   getTeamProviderInfoFilePath = (projectPath?: string): string =>
     this.constructPath(projectPath, [PathConstants.AmplifyDirName, PathConstants.TeamProviderInfoFileName]);
 
@@ -145,16 +155,16 @@ export class PathManager {
     path.join(this.getResourceDirectoryPath(projectPath, category, resourceName), PathConstants.CLIInputsJsonFileName);
 
   getResourceParametersFilePath = (projectPath: string | undefined, category: string, resourceName: string): string => {
-    let isBuildParametersjson: boolean = false;
+    let isBuildParametersJson = false;
     const resourceDirPath = this.getResourceDirectoryPath(projectPath, category, resourceName);
     if (
       !fs.existsSync(path.join(resourceDirPath, PathConstants.ParametersJsonFileName)) &&
       fs.existsSync(path.join(resourceDirPath, PathConstants.CLIInputsJsonFileName)) &&
       overriddenCategories.includes(category)
     ) {
-      isBuildParametersjson = true;
+      isBuildParametersJson = true;
     }
-    const basePath = isBuildParametersjson ? path.join(resourceDirPath, PathConstants.BuildDirName) : resourceDirPath;
+    const basePath = isBuildParametersJson ? path.join(resourceDirPath, PathConstants.BuildDirName) : resourceDirPath;
     return path.join(basePath, PathConstants.ParametersJsonFileName);
   };
 
@@ -191,9 +201,11 @@ export class PathManager {
   getCustomPoliciesPath = (category: string, resourceName: string): string =>
     path.join(this.getResourceDirectoryPath(undefined, category, resourceName), PathConstants.CustomPoliciesFilename);
 
-  getAWSCredentialsFilePath = (): string => path.normalize(path.join(this.getDotAWSDirPath(), PathConstants.AWSCredentials));
+  getAWSCredentialsFilePath = (): string =>
+    process.env.AWS_SHARED_CREDENTIALS_FILE || path.normalize(path.join(this.getDotAWSDirPath(), PathConstants.AWSCredentials));
 
-  getAWSConfigFilePath = (): string => path.normalize(path.join(this.getDotAWSDirPath(), PathConstants.AWSConfig));
+  getAWSConfigFilePath = (): string =>
+    process.env.AWS_CONFIG_FILE || path.normalize(path.join(this.getDotAWSDirPath(), PathConstants.AWSConfig));
 
   getCLIJSONFilePath = (projectPath: string, env?: string): string => {
     const fileName = env === undefined ? PathConstants.CLIJSONFileName : PathConstants.CLIJsonWithEnvironmentFileName(env);
@@ -211,45 +223,61 @@ export class PathManager {
   getHooksConfigFilePath = (projectPath?: string): string =>
     path.join(this.getHooksDirPath(projectPath), PathConstants.HooksConfigFileName);
 
-  getOverrideDirPath = (projectPath: string, category: string, resourceName: string): string => {
-    return this.constructPath(projectPath, [
+  getOverrideDirPath = (projectPath: string, category: string, resourceName: string): string =>
+    this.constructPath(projectPath, [
       PathConstants.AmplifyDirName,
       PathConstants.BackendDirName,
       category,
       resourceName,
       PathConstants.OverrideDirName,
     ]);
-  };
 
-  getRootOverrideDirPath = (projectPath: string): string => {
-    return this.constructPath(projectPath, [
+  getRootOverrideDirPath = (projectPath: string): string =>
+    this.constructPath(projectPath, [
       PathConstants.AmplifyDirName,
       PathConstants.BackendDirName,
       PathConstants.ProviderName,
       PathConstants.OverrideDirName,
     ]);
-  };
 
-  getRootStackBuildDirPath = (projectPath: string): string => {
-    return this.constructPath(projectPath, [
+  getRootStackBuildDirPath = (projectPath: string): string =>
+    this.constructPath(projectPath, [
       PathConstants.AmplifyDirName,
       PathConstants.BackendDirName,
       PathConstants.ProviderName,
       PathConstants.BuildDirName,
     ]);
-  };
 
-  getCurrentCloudRootStackDirPath = (projectPath: string): string => {
-    return this.constructPath(projectPath, [
+  getStackBuildCategoryResourceDirPath = (projectPath: string, category: string, resourceName: string): string =>
+    this.constructPath(projectPath, [
+      PathConstants.AmplifyDirName,
+      PathConstants.BackendDirName,
+      PathConstants.ProviderName,
+      PathConstants.BuildDirName,
+      category,
+      resourceName,
+    ]);
+
+  getCurrentCloudRootStackDirPath = (projectPath: string): string =>
+    this.constructPath(projectPath, [
       PathConstants.AmplifyDirName,
       PathConstants.CurrentCloudBackendDirName,
       PathConstants.ProviderName,
       PathConstants.BuildDirName,
     ]);
-  };
+
+  getResourceOverrideFilePath = (projectPath: string | undefined, category: string, resourceName: string): string =>
+    this.constructPath(projectPath, [
+      PathConstants.AmplifyDirName,
+      PathConstants.BackendDirName,
+      category,
+      resourceName,
+      PathConstants.OverrideFileName,
+    ]);
 
   private constructPath = (projectPath?: string, segments: string[] = []): string => {
     if (!projectPath) {
+      // eslint-disable-next-line no-param-reassign
       projectPath = this.findProjectRoot();
     }
 
@@ -257,15 +285,31 @@ export class PathManager {
       return path.normalize(path.join(projectPath, ...segments));
     }
 
-    throw new NotInitializedError();
+    throw projectNotInitializedError();
   };
 
   private validateProjectPath = (projectPath: string): boolean => {
     if (fs.existsSync(projectPath)) {
       const amplifyDirPath = this.getAmplifyDirPath(projectPath);
       const dotConfigDirPath = this.getDotConfigDirPath(projectPath);
+      const localEnvFilePath = this.getLocalEnvFilePath(projectPath);
+      const currentCloudBackendDirPath = pathManager.getCurrentCloudBackendDirPath(projectPath);
+      const backendDirPath = pathManager.getBackendDirPath(projectPath);
+      const projectConfigPath = pathManager.getProjectConfigFilePath(projectPath);
 
-      return fs.existsSync(amplifyDirPath) && fs.existsSync(dotConfigDirPath);
+      if (fs.existsSync(amplifyDirPath) && fs.existsSync(dotConfigDirPath)) {
+        if (fs.existsSync(currentCloudBackendDirPath) && fs.existsSync(backendDirPath)) {
+          return true;
+        }
+
+        if (fs.existsSync(projectConfigPath)) {
+          return true;
+        }
+
+        if (fs.existsSync(localEnvFilePath)) {
+          return projectPath === stateManager.getLocalEnvInfo(projectPath).projectPath;
+        }
+      }
     }
 
     return false;

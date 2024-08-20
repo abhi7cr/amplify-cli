@@ -1,6 +1,5 @@
-import { stateManager, exitOnNextTick, ResourceDoesNotExistError } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
-import * as inquirer from 'inquirer';
+import { stateManager, exitOnNextTick, ResourceDoesNotExistError } from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import * as path from 'path';
 import { removeResourceParameters } from '../../../extensions/amplify-helpers/envResourceParams';
 import { removeResource, forceRemoveResource } from '../../../extensions/amplify-helpers/remove-resource';
@@ -13,8 +12,8 @@ jest.mock('inquirer', () => ({
   prompt: jest.fn().mockResolvedValue({ resource: 'lambda1' }),
 }));
 
-jest.mock('amplify-cli-core', () => ({
-  ...(jest.requireActual('amplify-cli-core') as {}),
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
+  ...(jest.requireActual('@aws-amplify/amplify-cli-core') as {}),
   stateManager: {
     getCurrentMeta: jest.fn(),
     getMeta: jest.fn(),
@@ -24,6 +23,9 @@ jest.mock('amplify-cli-core', () => ({
   },
   pathManager: {
     getResourceDirectoryPath: jest.fn((_, categoryName, resourceName) => path.join('backendDirPath', categoryName, resourceName)),
+    getStackBuildCategoryResourceDirPath: jest.fn((_, categoryName, resourceName) =>
+      path.join('backendDirPath/awscloudformation/build/', categoryName, resourceName),
+    ),
   },
   exitOnNextTick: jest.fn().mockImplementation(() => {
     throw 'process.exit mock';
@@ -31,9 +33,9 @@ jest.mock('amplify-cli-core', () => ({
 }));
 
 const stateManagerMock = stateManager as jest.Mocked<typeof stateManager>;
-const inquirerMock = inquirer as jest.Mocked<typeof inquirer>;
 
-jest.mock('amplify-prompts');
+jest.mock('@aws-amplify/amplify-prompts');
+const prompterMock = prompter as jest.Mocked<typeof prompter>;
 
 describe('remove-resource', () => {
   let context;
@@ -111,23 +113,17 @@ describe('remove-resource', () => {
 
   describe('removeResource', () => {
     it('emit an error when the resource of the specified category does not exist', async () => {
-      await expect(removeResource(context as any, 'api', 'test')).rejects.toBe('process.exit mock');
-
-      expect(printer.error).toBeCalledWith('No resources added for this category');
-      expect(context.usageData.emitError).toBeCalledWith(new ResourceDoesNotExistError('No resources added for this category'));
-      expect(exitOnNextTick).toBeCalledWith(1);
+      await expect(removeResource(context as any, 'api', 'test')).rejects.toThrowError('No resources added for this category');
     });
 
     it('emit an error when the resource of the specified resource name does not exist', async () => {
-      await expect(removeResource(context as any, 'function', 'lambda2')).rejects.toBe('process.exit mock');
-
-      const errorMessage = 'Resource lambda2 has not been added to function';
-      expect(printer.error).toBeCalledWith(errorMessage);
-      expect(context.usageData.emitError).toBeCalledWith(new ResourceDoesNotExistError(errorMessage));
-      expect(exitOnNextTick).toBeCalledWith(1);
+      await expect(removeResource(context as any, 'function', 'lambda2')).rejects.toThrowError(
+        'Resource lambda2 has not been added to function',
+      );
     });
 
     it('prompts resource name when not specified resource name', async () => {
+      prompterMock.pick.mockResolvedValueOnce('lambda1');
       await expect(
         removeResource(context as any, 'function', undefined, {
           serviceDeletionInfo: {
@@ -140,51 +136,44 @@ describe('remove-resource', () => {
         resourceName: 'lambda1',
       });
 
-      expect(inquirer.prompt).toBeCalledWith([
+      expect(prompterMock.pick).toBeCalledWith('Choose the resource you would want to remove', [
         {
-          name: 'resource',
-          message: 'Choose the resource you would want to remove',
-          type: 'list',
-          choices: [
-            {
-              name: 'lambda1 (function)',
-              value: 'lambda1',
-            },
-            {
-              name: 'lambdaLayer1 (layer)',
-              value: 'lambdaLayer1',
-            },
-          ],
+          name: 'lambda1 (function)',
+          value: 'lambda1',
+        },
+        {
+          name: 'lambdaLayer1 (layer)',
+          value: 'lambdaLayer1',
         },
       ]);
     });
 
     it('print the deletion info when choose LambdaLayer', async () => {
-      inquirerMock.prompt.mockResolvedValue({ resource: 'lambdaLayer1' }),
-        await expect(
-          removeResource(context as any, 'function', undefined, {
-            serviceDeletionInfo: {
-              LambdaLayer: 'lambdaLayer deletion info message',
-            },
-            serviceSuffix: { Lambda: '(function)', LambdaLayer: '(layer)' },
-          }),
-        ).resolves.toBeUndefined();
+      prompterMock.pick.mockResolvedValueOnce('lambdaLayer1');
 
-      expect(inquirer.prompt).toBeCalledWith([
+      let error;
+      try {
+        await removeResource(context as any, 'function', undefined, {
+          serviceDeletionInfo: {
+            LambdaLayer: 'lambdaLayer deletion info message',
+          },
+          serviceSuffix: { Lambda: '(function)', LambdaLayer: '(layer)' },
+        });
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeDefined();
+      expect(error.message).toBe('Resource cannot be removed because it has a dependency on another resource');
+      expect(error.details).toBe('Dependency: Lambda - lambda1. Remove the dependency first.');
+
+      expect(prompterMock.pick).toBeCalledWith('Choose the resource you would want to remove', [
         {
-          name: 'resource',
-          message: 'Choose the resource you would want to remove',
-          type: 'list',
-          choices: [
-            {
-              name: 'lambda1 (function)',
-              value: 'lambda1',
-            },
-            {
-              name: 'lambdaLayer1 (layer)',
-              value: 'lambdaLayer1',
-            },
-          ],
+          name: 'lambda1 (function)',
+          value: 'lambda1',
+        },
+        {
+          name: 'lambdaLayer1 (layer)',
+          value: 'lambdaLayer1',
         },
       ]);
 
@@ -212,6 +201,8 @@ describe('remove-resource', () => {
         },
       });
       expect(context.filesystem.remove).toBeCalledWith(path.join('backendDirPath', 'function', 'lambda1'));
+      expect(context.filesystem.remove).toBeCalledWith(path.join('backendDirPath/awscloudformation/build', 'function', 'lambda1'));
+      expect(context.filesystem.remove).toBeCalledTimes(2);
       expect(removeResourceParameters).toBeCalledWith(context, 'function', 'lambda1');
       expect(updateBackendConfigAfterResourceRemove).toBeCalledWith('function', 'lambda1');
       expect(printer.success).toBeCalledWith('Successfully removed resource');
@@ -229,14 +220,15 @@ describe('remove-resource', () => {
     });
 
     it('throw an error when the dependent resources has a specified resource', async () => {
-      await expect(removeResource(context as any, 'function', 'lambdaLayer1')).resolves.toBeUndefined();
-
-      expect(printer.error).toBeCalledWith('Resource cannot be removed because it has a dependency on another resource');
-      expect(printer.error).toBeCalledWith('Dependency: Lambda - lambda1');
-      expect(printer.error).toBeCalledWith('An error occurred when removing the resources from the local directory');
-      expect(context.usageData.emitError).toBeCalledWith(
-        new Error('Resource cannot be removed because it has a dependency on another resource'),
-      );
+      let error;
+      try {
+        await removeResource(context as any, 'function', 'lambdaLayer1');
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeDefined();
+      expect(error.message).toBe('Resource cannot be removed because it has a dependency on another resource');
+      expect(error.details).toBe('Dependency: Lambda - lambda1. Remove the dependency first.');
     });
 
     it('print message to unlink the imported resource on confirm prompt when the specified service is imported resource', async () => {
@@ -281,6 +273,7 @@ describe('remove-resource', () => {
         },
       });
       expect(context.filesystem.remove).toBeCalledWith('backendDirPath/function/lambdaLayer1');
+      expect(context.filesystem.remove).toBeCalledWith('backendDirPath/awscloudformation/build/function/lambdaLayer1');
       expect(removeResourceParameters).toBeCalledWith(context, 'function', 'lambdaLayer1');
       expect(updateBackendConfigAfterResourceRemove).toBeCalledWith('function', 'lambdaLayer1');
       expect(printer.success).toBeCalledWith('Successfully removed resource');

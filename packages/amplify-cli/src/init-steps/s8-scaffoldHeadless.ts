@@ -2,19 +2,20 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import {
   $TSContext,
+  AmplifyError,
   AmplifyProjectConfig,
   CLIContextEnvironmentProvider,
   FeatureFlags,
   JSONUtilities,
   PathConstants,
   pathManager,
-} from 'amplify-cli-core';
+} from '@aws-amplify/amplify-cli-core';
 import { insertAmplifyIgnore } from '../extensions/amplify-helpers/git-manager';
 
 /**
  * Extract amplify project structure with backend-config and project-config
  */
-export async function scaffoldProjectHeadless(context: $TSContext) {
+export const scaffoldProjectHeadless = async (context: $TSContext): Promise<void> => {
   const projectPath = process.cwd();
   const { projectName, frontend } = context.exeInfo.projectConfig;
 
@@ -33,10 +34,13 @@ export async function scaffoldProjectHeadless(context: $TSContext) {
   );
 
   if (!projectConfigFile) {
-    throw new Error(`project-config.json template not found for frontend: ${frontend}`);
+    throw new AmplifyError('ProjectInitError', {
+      message: `project-config.json template not found for frontend: ${frontend}`,
+      link: 'https://docs.amplify.aws/cli/project/troubleshooting/',
+    });
   }
 
-  projectConfigFile['projectName'] = projectName;
+  projectConfigFile.projectName = projectName;
   JSONUtilities.writeJson(pathManager.getProjectConfigFilePath(projectPath), projectConfigFile);
 
   // copy backend folder
@@ -46,9 +50,7 @@ export async function scaffoldProjectHeadless(context: $TSContext) {
 
   // Initialize feature flags
   const contextEnvironmentProvider = new CLIContextEnvironmentProvider({
-    getEnvInfo: () => {
-      return context.exeInfo.localEnvInfo;
-    },
+    getEnvInfo: () => context.exeInfo.localEnvInfo,
   });
 
   if (!FeatureFlags.isInitialized()) {
@@ -56,4 +58,4 @@ export async function scaffoldProjectHeadless(context: $TSContext) {
   }
 
   await FeatureFlags.ensureDefaultFeatureFlags(true);
-}
+};

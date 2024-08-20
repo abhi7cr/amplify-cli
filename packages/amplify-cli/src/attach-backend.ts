@@ -1,16 +1,28 @@
+import {
+  $TSContext,
+  AmplifyError,
+  AmplifyFault,
+  FeatureFlags,
+  LocalEnvInfo,
+  pathManager,
+  stateManager,
+} from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { pathManager, stateManager, $TSContext, FeatureFlags } from 'amplify-cli-core';
+import { postPullCodegen } from './amplify-service-helper';
 import { queryProvider } from './attach-backend-steps/a10-queryProvider';
 import { analyzeProject } from './attach-backend-steps/a20-analyzeProject';
 import { initFrontend } from './attach-backend-steps/a30-initFrontend';
 import { generateFiles } from './attach-backend-steps/a40-generateFiles';
-import { postPullCodegen } from './amplify-service-helper';
 import { initializeEnv } from './initialize-env';
 
 const backupAmplifyDirName = 'amplify-backup';
 
-export async function attachBackend(context: $TSContext, inputParams) {
+/**
+ * Attach backend to project
+ */
+export const attachBackend = async (context: $TSContext, inputParams): Promise<void> => {
   prepareContext(context, inputParams);
 
   backupAmplifyFolder();
@@ -33,20 +45,24 @@ export async function attachBackend(context: $TSContext, inputParams) {
     removeAmplifyFolderStructure();
     restoreOriginalAmplifyFolder();
 
-    context.print.error('Failed to pull the backend.');
-    context.usageData.emitError(e);
-
-    throw e;
+    throw new AmplifyFault(
+      'PullBackendFault',
+      {
+        message: 'Failed to pull the backend.',
+      },
+      e,
+    );
   }
-}
+};
 
-async function onSuccess(context: $TSContext) {
+const onSuccess = async (context: $TSContext): Promise<void> => {
   const { inputParams } = context.exeInfo;
+  const projectPath = process.cwd();
+  const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
 
   if (inputParams.amplify.noOverride) {
-    const projectPath = process.cwd();
-    const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
-    const backupBackendDirPath = path.join(backupAmplifyDirPath, context.amplify.constants.BackendamplifyCLISubDirName);
+    // eslint-disable-next-line spellcheck/spell-checker
+    const backupBackendDirPath = path.join(backupAmplifyDirPath, context.amplify.constants.BackendAmplifyCLISubDirName);
 
     if (fs.existsSync(backupBackendDirPath)) {
       const backendDirPath = pathManager.getBackendDirPath(projectPath);
@@ -70,29 +86,33 @@ async function onSuccess(context: $TSContext) {
 
       const { envName } = context.exeInfo.localEnvInfo;
 
-      context.print.info('');
-      context.print.success(`Successfully pulled backend environment ${envName} from the cloud.`);
-      context.print.info(`Run 'amplify pull' to sync future upstream changes.`);
-      context.print.info('');
+      printer.info('');
+      printer.success(`Successfully pulled backend environment ${envName} from the cloud.`);
+      printer.info("Run 'amplify pull' to sync future upstream changes.");
+      printer.info('');
     } else {
       stateManager.setLocalEnvInfo(process.cwd(), { ...context.exeInfo.localEnvInfo, noUpdateBackend: true });
       removeAmplifyFolderStructure(true);
 
-      context.print.info('');
-      context.print.success(`Added backend environment config object to your project.`);
-      context.print.info(`Run 'amplify pull' to sync future upstream changes.`);
-      context.print.info('');
+      printer.info('');
+      printer.success('Added backend environment config object to your project.');
+      printer.info("Run 'amplify pull' to sync future upstream changes.");
+      printer.info('');
     }
-  } else {
-    if (stateManager.currentMetaFileExists()) {
-      await initializeEnv(context, stateManager.getCurrentMeta());
-    }
+  } else if (stateManager.currentMetaFileExists()) {
+    await initializeEnv(context, stateManager.getCurrentMeta());
   }
-
+  // move Hooks folder from backup to original amplify folder
+  const hooksDirPath = pathManager.getHooksDirPath(projectPath);
+  const hooksBackupDirPath = path.join(backupAmplifyDirPath, 'hooks');
+  // hooks folder shouldnt be present , if it is then we overrite with the given Customer folder from amplify backup
+  if (fs.existsSync(hooksBackupDirPath)) {
+    fs.moveSync(hooksBackupDirPath, hooksDirPath, { overwrite: true });
+  }
   removeBackupAmplifyFolder();
-}
+};
 
-function backupAmplifyFolder() {
+const backupAmplifyFolder = (): void => {
   const projectPath = process.cwd();
   const amplifyDirPath = pathManager.getAmplifyDirPath(projectPath);
 
@@ -100,27 +120,35 @@ function backupAmplifyFolder() {
     const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
 
     if (fs.existsSync(backupAmplifyDirPath)) {
-      const error = new Error(`Backup folder at ${backupAmplifyDirPath} already exists, remove the folder and retry the operation.`);
-
-      error.name = 'BackupFolderAlreadyExist';
-      error.stack = undefined;
-
-      throw error;
+      throw new AmplifyError('DirectoryAlreadyExistsError', {
+        message: `Backup folder at ${backupAmplifyDirPath} already exists, remove the folder and retry the operation.`,
+      });
     }
     try {
-      fs.moveSync(amplifyDirPath, backupAmplifyDirPath);
+      fs.copySync(amplifyDirPath, backupAmplifyDirPath);
     } catch (e) {
       if (e.code === 'EPERM') {
-        throw new Error(
-          'Could not attach the backend to the project. Ensure that there are no applications locking the `amplify` folder and try again',
+        throw new AmplifyError(
+          'DirectoryError',
+          {
+            message: `Could not attach the backend to the project.`,
+            resolution: 'Ensure that there are no applications locking the `amplify` folder and try again.',
+          },
+          e,
         );
       }
-      throw e;
+      throw new AmplifyFault(
+        'AmplifyBackupFault',
+        {
+          message: `Could not attach the backend to the project.`,
+        },
+        e,
+      );
     }
   }
-}
+};
 
-function restoreOriginalAmplifyFolder() {
+const restoreOriginalAmplifyFolder = (): void => {
   const projectPath = process.cwd();
   const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
 
@@ -130,16 +158,16 @@ function restoreOriginalAmplifyFolder() {
     fs.removeSync(amplifyDirPath);
     fs.moveSync(backupAmplifyDirPath, amplifyDirPath);
   }
-}
+};
 
-function removeBackupAmplifyFolder() {
+const removeBackupAmplifyFolder = (): void => {
   const projectPath = process.cwd();
   const backupAmplifyDirPath = path.join(projectPath, backupAmplifyDirName);
 
   fs.removeSync(backupAmplifyDirPath);
-}
+};
 
-function setupFolderStructure(): void {
+const setupFolderStructure = (): void => {
   const projectPath = process.cwd();
 
   const amplifyDirPath = pathManager.getAmplifyDirPath(projectPath);
@@ -151,9 +179,9 @@ function setupFolderStructure(): void {
   fs.ensureDirSync(dotConfigDirPath);
   fs.ensureDirSync(currentCloudBackendDirPath);
   fs.ensureDirSync(backendDirPath);
-}
+};
 
-function removeAmplifyFolderStructure(partial = false) {
+const removeAmplifyFolderStructure = (partial = false): void => {
   const projectPath = process.cwd();
   if (partial) {
     fs.removeSync(pathManager.getBackendDirPath(projectPath));
@@ -162,9 +190,9 @@ function removeAmplifyFolderStructure(partial = false) {
     const amplifyDirPath = pathManager.getAmplifyDirPath(projectPath);
     fs.removeSync(amplifyDirPath);
   }
-}
+};
 
-function prepareContext(context: $TSContext, inputParams) {
+const prepareContext = (context: $TSContext, inputParams): void => {
   const projectPath = process.cwd();
 
   context.exeInfo = {
@@ -173,12 +201,12 @@ function prepareContext(context: $TSContext, inputParams) {
     projectConfig: {},
     localEnvInfo: {
       projectPath,
-    },
+    } as unknown as LocalEnvInfo,
     teamProviderInfo: {},
-    existingProjectConfig: stateManager.getProjectConfig(projectPath, {
+    existingTeamProviderInfo: stateManager.getTeamProviderInfo(projectPath, {
       throwIfNotExist: false,
     }),
-    existingTeamProviderInfo: stateManager.getTeamProviderInfo(projectPath, {
+    existingProjectConfig: stateManager.getProjectConfig(projectPath, {
       throwIfNotExist: false,
     }),
     existingLocalEnvInfo: stateManager.getLocalEnvInfo(projectPath, {
@@ -189,17 +217,16 @@ function prepareContext(context: $TSContext, inputParams) {
     }),
   };
   updateContextForNoUpdateBackendProjects(context);
-}
+};
 
-function updateContextForNoUpdateBackendProjects(context) {
+const updateContextForNoUpdateBackendProjects = (context: $TSContext): void => {
   if (context.exeInfo.existingLocalEnvInfo?.noUpdateBackend) {
-    const envName = context.exeInfo.existingLocalEnvInfo.envName;
+    const { envName } = context.exeInfo.existingLocalEnvInfo;
     context.exeInfo.isNewProject = false;
     context.exeInfo.localEnvInfo = context.exeInfo.existingLocalEnvInfo;
     context.exeInfo.projectConfig = context.exeInfo.existingProjectConfig;
     context.exeInfo.awsConfigInfo = context.exeInfo.existingLocalAwsInfo[envName];
     context.exeInfo.awsConfigInfo.config = { ...context.exeInfo.existingLocalAwsInfo[envName] };
-    context.exeInfo.teamProviderInfo = context.exeInfo.existingTeamProviderInfo;
     context.exeInfo.inputParams = context.exeInfo.inputParams || {};
     context.exeInfo.inputParams.amplify = context.exeInfo.inputParams.amplify || {};
 
@@ -212,8 +239,9 @@ function updateContextForNoUpdateBackendProjects(context) {
       context.exeInfo.inputParams.amplify.frontend || context.exeInfo.existingProjectConfig.frontend;
     context.exeInfo.inputParams.amplify.appId =
       context.exeInfo.inputParams.amplify.appId || context.exeInfo.existingTeamProviderInfo[envName].awscloudformation?.AmplifyAppId;
+    // eslint-disable-next-line max-len
     context.exeInfo.inputParams[context.exeInfo.inputParams.amplify.frontend] =
       context.exeInfo.inputParams[context.exeInfo.inputParams.amplify.frontend] ||
       context.exeInfo.existingProjectConfig[context.exeInfo.inputParams.amplify.frontend];
   }
-}
+};

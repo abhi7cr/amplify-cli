@@ -1,12 +1,10 @@
 import { AppSyncSimulatorSubscriptionServer } from '../../server/websocket-subscription';
-
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { parse } from 'graphql';
 import { IncomingMessage, Server, createServer } from 'http';
 import * as WebSocket from 'ws';
-
 import { getAuthorizationMode, extractJwtToken, extractHeader } from '../../utils/auth-helpers';
-import { runSubscription, SubscriptionResult } from '../../utils/graphql-runner/subscriptions';
+import { runSubscription } from '../../utils/graphql-runner/subscriptions';
 import { ConnectionContext, WebsocketSubscriptionServer } from '../../server/subscription/websocket-server/server';
 import { AmplifyAppSyncAPIConfig, AmplifyAppSyncSimulatorAuthenticationType } from '../../type-definition';
 import { PubSub } from 'graphql-subscriptions';
@@ -75,10 +73,10 @@ describe('websocket subscription', () => {
     expect(startSpy).toHaveBeenCalled();
   });
 
-  it('should call websocket servers stop method when stop is called', () => {
+  it('should call websocket servers stop method when stop is called', async () => {
     const stopSpy = jest.spyOn(WebsocketSubscriptionServer.prototype, 'stop');
     const subs = new AppSyncSimulatorSubscriptionServer(simulatorContext, server, subscriptionPath);
-    subs.stop();
+    await subs.stop();
     expect(stopSpy).toHaveBeenCalled();
   });
 
@@ -121,7 +119,7 @@ describe('websocket subscription', () => {
 
   describe('onSubscribe', () => {
     let subsServer: AppSyncSimulatorSubscriptionServer;
-    let asyncIterator = new PubSub().asyncIterator('onMessage');
+    const asyncIterator = new PubSub().asyncIterator('onMessage');
     const tokenString = 'token-here';
     const jwt = { iss: 'some issuer' };
     const doc = parse(/* GraphQL */ `

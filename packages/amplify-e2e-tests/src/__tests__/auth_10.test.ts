@@ -1,4 +1,3 @@
-import { $TSAny } from 'amplify-cli-core';
 import {
   addAuthWithDefault,
   createNewProjectDir,
@@ -7,7 +6,7 @@ import {
   getBackendConfig,
   initJSProjectWithProfile,
   updateAuthMFAConfiguration,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 
 const defaultsSettings = {
   name: 'authTest',
@@ -27,7 +26,7 @@ describe('amplify update auth', () => {
 
   it('...should update backend-config.json on auth update', async () => {
     await initJSProjectWithProfile(projRoot, defaultsSettings);
-    await addAuthWithDefault(projRoot, {});
+    await addAuthWithDefault(projRoot);
     const backendConfigBefore = await getBackendConfig(projRoot);
 
     await updateAuthMFAConfiguration(projRoot, {});

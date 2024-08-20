@@ -17,6 +17,7 @@ import {
   AppSyncSimulatorUnitResolverConfig,
   AmplifyAppSyncAPIConfig,
   AppSyncSimulatorMappingTemplate,
+  AppSyncSimulatorDataSourceType,
 } from './type-definition';
 import { filterSubscriptions } from './utils';
 export { AppSyncGraphQLExecutionContext, JWTToken, IAMToken } from './utils';
@@ -90,7 +91,6 @@ export class AmplifyAppSyncSimulator {
       }, new Map());
 
       this.functions = (config.functions || []).reduce((map, fn) => {
-        const { dataSourceName, requestMappingTemplateLocation, responseMappingTemplateLocation } = fn;
         map.set(fn.name, new AmplifySimulatorFunction(fn, this));
         return map;
       }, new Map());
@@ -123,8 +123,8 @@ export class AmplifyAppSyncSimulator {
     await this._server.start();
   }
 
-  stop() {
-    this._server.stop();
+  async stop() {
+    await this._server.stop();
   }
 
   getMappingTemplate(path: string): VelocityTemplate {
@@ -153,6 +153,19 @@ export class AmplifyAppSyncSimulator {
   getResolver(typeName, fieldName) {
     return this.resolvers.get(`${typeName}:${fieldName}`);
   }
+  // Iterates over all data sources and deletes all items for each table
+  async clearData(): Promise<object> {
+    const dataSourceIterator = this.dataSources.values();
+    let deletedTables = [];
+    let dataSource = dataSourceIterator.next();
+    while (!dataSource.done) {
+      if (dataSource.value.ddbConfig?.type === AppSyncSimulatorDataSourceType.DynamoDB) {
+        deletedTables = [...deletedTables, ...(await dataSource.value.load({ operation: 'DeleteAllItems' }))];
+      }
+      dataSource = dataSourceIterator.next();
+    }
+    return deletedTables;
+  }
 
   get schema(): GraphQLSchema {
     return this._schema;
@@ -167,6 +180,12 @@ export class AmplifyAppSyncSimulator {
 
   get url(): string {
     return this._server.url.graphql;
+  }
+  get localhostUrl(): string {
+    return this._server.localhostUrl.graphql;
+  }
+  get isHttps(): boolean {
+    return this._server.isHttps;
   }
   get config(): AmplifyAppSyncSimulatorConfig {
     return this._config;

@@ -1,4 +1,4 @@
-import { $TSContext } from 'amplify-cli-core';
+import { $TSContext } from '@aws-amplify/amplify-cli-core';
 import { executeProviderUtils } from '../../../extensions/amplify-helpers/execute-provider-utils';
 
 jest.mock('../../../extensions/amplify-helpers/get-provider-plugins.ts', () => ({
@@ -8,14 +8,14 @@ jest.mock('../../../extensions/amplify-helpers/get-provider-plugins.ts', () => (
 jest.mock('../../../../__mocks__/faked-plugin', () => ({
   providerUtils: {
     compileSchema: jest.fn().mockReturnValue(Promise.resolve({})),
-    zipFiles: jest.fn((context, [srcDir, dstZipFilePath]) => {
+    zipFiles: jest.fn(() => {
       return Promise.resolve({});
     }),
   },
 }));
 
 describe('executeProviderUtils', () => {
-  const mockContext = ({} as unknown) as $TSContext;
+  const mockContext = {} as unknown as $TSContext;
   let options = {};
   it('should execute compileSchema', async () => {
     const util = await executeProviderUtils(mockContext, 'awscloudformation', 'compileSchema', options);

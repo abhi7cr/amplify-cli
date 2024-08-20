@@ -1,7 +1,7 @@
 // Some convenience types for the existing service walkthrough logic
 
-import { $TSObject } from 'amplify-cli-core';
-import { FunctionDependency } from 'amplify-function-plugin-interface';
+import { $TSObject, $TSAny } from '@aws-amplify/amplify-cli-core';
+import { FunctionDependency } from '@aws-amplify/amplify-function-plugin-interface';
 import { CognitoConfiguration } from './awsCognito-user-input-types';
 
 export type AuthTriggerPermissions = {
@@ -25,6 +25,8 @@ type AuthStackMetadata = {
   breakCircularDependency: boolean;
   permissions?: AuthTriggerPermissions[];
   authTriggerConnections?: AuthTriggerConnection[];
+  userAutoVerifiedAttributeUpdateSettings?: string[];
+  authTriggerPermissions?: AuthTriggerPermissions[];
 };
 
 export type ServiceQuestionHeadlessResult = ServiceQuestionsBaseResult &
@@ -59,18 +61,19 @@ export interface ServiceQuestionsBaseResult {
   verificationBucketName?: string;
   resourceNameTruncated?: string;
   sharedId?: string;
+  permissions?: string;
 }
 
 export interface OAuthResult {
   hostedUI?: boolean;
   hostedUIDomainName?: string;
-  hostedUIProviderMeta?: any;
-  hostedUIProviderCreds?: any;
+  hostedUIProviderMeta?: $TSAny;
+  hostedUIProviderCreds?: $TSAny;
   AllowedOAuthFlows?: 'code' | 'implicit';
   AllowedOAuthScopes?: string[];
   newCallbackURLs?: string[];
   newLogoutURLs?: string[];
-  oAuthMetadata?: any;
+  oAuthMetadata?: $TSAny;
 }
 
 export interface SocialProviderResult {
@@ -138,7 +141,7 @@ export type UsernameAttributes = AttributeType.EMAIL | AttributeType.PHONE_NUMBE
 export type AliasAttributes = AttributeType.EMAIL | AttributeType.PHONE_NUMBER | AttributeType.PREFERRED_USERNAME;
 
 export interface Triggers {
-  triggers?: any; // TODO create a type for this
+  triggers?: $TSAny; // TODO create a type for this
 }
 
 export enum TriggerType {
@@ -162,4 +165,5 @@ export type AuthTriggerConnection = {
 export type AuthTriggerConfig = {
   triggers: $TSObject;
   authTriggerConnections: AuthTriggerConnection[];
+  authTriggerPermissions?: AuthTriggerPermissions[];
 };

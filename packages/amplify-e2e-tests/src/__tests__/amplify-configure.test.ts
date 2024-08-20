@@ -1,4 +1,12 @@
-import { nspawn as spawn, getCLIPath, singleSelect, createNewProjectDir, deleteProjectDir } from 'amplify-e2e-core';
+import {
+  amplifyConfigure,
+  nspawn as spawn,
+  getCLIPath,
+  createNewProjectDir,
+  deleteProject,
+  deleteProjectDir,
+  initJSProjectWithProfile,
+} from '@aws-amplify/amplify-e2e-core';
 
 describe('amplify configure', () => {
   let projRoot: string;
@@ -8,16 +16,28 @@ describe('amplify configure', () => {
   });
 
   afterEach(async () => {
+    await deleteProject(projRoot);
     deleteProjectDir(projRoot);
   });
 
   it('validates key inputs', async () => {
     await testAmplifyConfigureValidation();
   });
+
+  it('should turn on/off Usage Data', async () => {
+    await amplifyConfigure(projRoot, 'usage-data-on');
+    await amplifyConfigure(projRoot, 'usage-data-off');
+  });
+
+  it('should turn on/off share-project-config', async () => {
+    await initJSProjectWithProfile(projRoot, {});
+    await amplifyConfigure(projRoot, 'share-project-config-off');
+    await amplifyConfigure(projRoot, 'share-project-config-on');
+  });
 });
 
 function testAmplifyConfigureValidation(): Promise<void> {
-  const validMockAWSAccessKeyId = 'MOCK_KLNS6VBMOLVRGX';
+  const validMockAWSAccessKeyId = 'AKIAIOSFODNN7EXAMPLE';
   const defaultAWSAccessKeyId = '<YOUR_ACCESS_KEY_ID>';
   const accessKeyIdWithSpace = 'MOCK_JKLN 6VBMOLVRGX';
   const accessKeyIdTooShort = 'MOCK_JKLN'; //less than 16
@@ -26,7 +46,7 @@ function testAmplifyConfigureValidation(): Promise<void> {
     accessKeyIdTooLong += accessKeyIdTooLong;
   }
 
-  const validMockAWSSecretAccessKey = 'Mock_T0ERcxUpZhtQ1iom0v3O8fr0WYTkscsjrXDE';
+  const validMockAWSSecretAccessKey = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
   const defaultAWSSecretAccessKey = '<YOUR_SECRET_ACCESS_KEY>';
 
   return new Promise((resolve, reject) => {
@@ -35,8 +55,6 @@ function testAmplifyConfigureValidation(): Promise<void> {
       .wait('Press Enter to continue')
       .sendCarriageReturn()
       .wait('Specify the AWS Region')
-      .sendCarriageReturn()
-      .wait('user name:')
       .sendCarriageReturn()
       .wait('Press Enter to continue')
       .sendCarriageReturn()
@@ -55,6 +73,10 @@ function testAmplifyConfigureValidation(): Promise<void> {
       .wait('You must enter a valid secretAccessKey')
       .sendLine(validMockAWSSecretAccessKey)
       .wait('Profile Name:')
+      // Fake credentials used in this test are always invalid therefore
+      // 'config-test' is a new profile name using defaultAWSSecretAccessKey and validMockAWSSecretAccessKey
+      // to avoid overwriting profiles used in other tests.
+      // Do NOT use TEST_PROFILE_NAME here, otherwise, it will override the default profile.
       .sendLine('config-test')
       .wait('Successfully set up the new user.')
       .run((err: Error) => {

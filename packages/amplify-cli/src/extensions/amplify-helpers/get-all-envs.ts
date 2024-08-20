@@ -1,14 +1,12 @@
-import { stateManager } from 'amplify-cli-core';
+import { stateManager } from '@aws-amplify/amplify-cli-core';
 
-export function getAllEnvs(): string[] {
-  let allEnvs: string[] = [];
-
-  const envInfo = stateManager.getTeamProviderInfo(undefined, {
-    throwIfNotExist: false,
-    default: {},
-  });
-
-  allEnvs = Object.keys(envInfo);
-
-  return allEnvs;
-}
+/**
+ * Get all locally configured environments
+ */
+export const getAllEnvs = (): string[] =>
+  Object.keys(
+    stateManager.getLocalAWSInfo(undefined, {
+      throwIfNotExist: false,
+      default: {},
+    }),
+  );

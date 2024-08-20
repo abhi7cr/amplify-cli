@@ -1,25 +1,12 @@
 import { HookExtensions, HooksNoun, HooksVerb } from './hooksTypes';
 
-export const hookFileSeperator = '-';
+export const hookFileSeparator = '-';
 
-export const suppportedEvents: Record<HooksVerb, HooksNoun[]> = {
-  add: [
-    'notifications',
-    'analytics',
-    'api',
-    'auth',
-    'function',
-    'hosting',
-    'interactions',
-    'predictions',
-    'storage',
-    'xr',
-    'codegen',
-    'env',
-  ],
-  update: ['notifications', 'analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'predictions', 'storage', 'xr', 'env'],
-  remove: ['notifications', 'analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'predictions', 'storage', 'xr', 'env'],
-  push: ['analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'storage', 'xr'],
+export const supportedEvents: Record<HooksVerb, HooksNoun[]> = {
+  add: ['notifications', 'analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'predictions', 'storage', 'codegen', 'env'],
+  update: ['notifications', 'analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'predictions', 'storage', 'env'],
+  remove: ['notifications', 'analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'predictions', 'storage', 'env'],
+  push: ['analytics', 'api', 'auth', 'function', 'hosting', 'interactions', 'storage'],
   pull: ['env'],
   publish: [],
   delete: [],
@@ -40,4 +27,4 @@ export const supportedEnvEvents: HooksVerb[] = ['add', 'update', 'remove', 'pull
 
 export const defaultSupportedExt: HookExtensions = { js: { runtime: 'node' }, sh: { runtime: 'bash' } };
 
-export const skipHooksFilePath: string = '/opt/amazon';
+export const skipHooksFilePath = '/opt/amazon';

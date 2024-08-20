@@ -5,7 +5,7 @@ import {
   BuildRequest,
   BuildResult,
   BuildType,
-} from 'amplify-function-plugin-interface';
+} from '@aws-amplify/amplify-function-plugin-interface';
 import * as which from 'which';
 import execa from 'execa';
 import archiver from 'archiver';
@@ -14,6 +14,7 @@ import glob from 'glob';
 import path from 'path';
 import { SemVer, coerce, gte, lt } from 'semver';
 import { BIN_LOCAL, BIN, SRC, MAIN_BINARY, DIST, MAIN_BINARY_WIN } from './constants';
+import { AmplifyError } from '@aws-amplify/amplify-cli-core';
 
 const executableName = 'go';
 const minimumVersion = <SemVer>coerce('1.0');
@@ -24,22 +25,24 @@ let executablePath: string | null;
 export const executeCommand = (
   args: string[],
   streamStdio: boolean,
-  env: {} = {},
+  env: Record<string, string> = {},
   cwd: string | undefined = undefined,
   stdioInput: string | undefined = undefined,
 ): string => {
-  const output = execa.sync(executableName, args, {
-    stdio: streamStdio === true ? 'inherit' : 'pipe',
-    env,
-    cwd,
-    input: stdioInput,
-  });
-
-  if (output.exitCode !== 0) {
-    throw new Error(`${executableName} failed, exit code was ${output.exitCode}`);
+  try {
+    const output = execa.sync(executableName, args, {
+      stdio: streamStdio === true ? 'inherit' : 'pipe',
+      env,
+      cwd,
+      input: stdioInput,
+    });
+    if (output.exitCode !== 0) {
+      throw new AmplifyError('PackagingLambdaFunctionError', { message: `${executableName} failed, exit code was ${output.exitCode}` });
+    }
+    return output.stdout;
+  } catch (err) {
+    throw new AmplifyError('PackagingLambdaFunctionError', { message: `${executableName} failed, error message was ${err.message}` }, err);
   }
-
-  return output.stdout;
 };
 
 const isBuildStale = (resourceDir: string, lastBuildTimeStamp: Date, outDir: string) => {
@@ -58,7 +61,7 @@ const isBuildStale = (resourceDir: string, lastBuildTimeStamp: Date, outDir: str
 
   const fileUpdatedAfterLastBuild = glob
     .sync(`${resourceDir}/${SRC}/**`)
-    .find(file => new Date(fs.statSync(file).mtime) > lastBuildTimeStamp);
+    .find((file) => new Date(fs.statSync(file).mtime) > lastBuildTimeStamp);
 
   return !!fileUpdatedAfterLastBuild;
 };
@@ -70,8 +73,6 @@ export const buildResource = async ({ buildType, srcRoot, lastBuildTimeStamp }: 
   const outDir = path.join(srcRoot, buildDir);
 
   const isWindows = process.platform.startsWith('win');
-  const executableName = isWindows && buildType === BuildType.DEV ? MAIN_BINARY_WIN : MAIN_BINARY;
-  const executablePath = path.join(outDir, executableName);
 
   if (!lastBuildTimeStamp || isBuildStale(srcRoot, lastBuildTimeStamp, outDir)) {
     const srcDir = path.join(srcRoot, SRC);
@@ -83,7 +84,7 @@ export const buildResource = async ({ buildType, srcRoot, lastBuildTimeStamp }: 
       fs.mkdirSync(outDir);
     }
 
-    const envVars: any = {};
+    const envVars: any = { GOPROXY: 'direct' };
 
     if (buildType === BuildType.PROD) {
       envVars.GOOS = 'linux';
@@ -92,12 +93,14 @@ export const buildResource = async ({ buildType, srcRoot, lastBuildTimeStamp }: 
 
     if (isWindows) {
       envVars.CGO_ENABLED = 0;
+      executeCommand(['install', 'github.com/aws/aws-lambda-go/cmd/build-lambda-zip@latest'], true, envVars, srcDir);
     }
 
     // for go@1.16, dependencies must be manually installed
     executeCommand(['mod', 'tidy', '-v'], true, envVars, srcDir);
     // Execute the build command, cwd must be the source file directory (Windows requires it)
-    executeCommand(['build', '-o', executablePath, '.'], true, envVars, srcDir);
+    // Details: https://github.com/aws/aws-lambda-go
+    executeCommand(['build', '-o', '../bin/bootstrap', '.'], true, envVars, srcDir);
 
     rebuilt = true;
   }
@@ -107,7 +110,26 @@ export const buildResource = async ({ buildType, srcRoot, lastBuildTimeStamp }: 
   };
 };
 
-export const checkDependencies = async (_runtimeValue: string): Promise<CheckDependenciesResult> => {
+export const getGoVersion = (): SemVer => {
+  // Validate go version
+  const versionOutput = executeCommand(['version'], false);
+
+  if (versionOutput) {
+    const parts = versionOutput.split(' ');
+
+    // Output: go version go1.14 darwin/amd64
+    if (parts.length !== 4 || !parts[2].startsWith('go') || coerce(parts[2].slice(2)) === null) {
+      throw new Error(`Invalid version string: ${versionOutput}`);
+    }
+
+    const goVersion = <SemVer>coerce(parts[2].slice(2));
+
+    return goVersion;
+  }
+  throw new Error(`Invalid version string: ${versionOutput}`);
+};
+
+export const checkDependencies = async (): Promise<CheckDependenciesResult> => {
   // Check if go is in the path
   executablePath = which.sync(executableName, {
     nothrow: true,
@@ -120,28 +142,13 @@ export const checkDependencies = async (_runtimeValue: string): Promise<CheckDep
     };
   }
 
-  // Validate go version
-  const versionOutput = executeCommand(['version'], false);
+  const version = getGoVersion();
 
-  if (versionOutput) {
-    const parts = versionOutput.split(' ');
-
-    // Output: go version go1.14 darwin/amd64
-    if (parts.length !== 4 || !parts[2].startsWith('go') || coerce(parts[2].slice(2)) === null) {
-      return {
-        hasRequiredDependencies: false,
-        errorMessage: `Invalid version string: ${versionOutput}`,
-      };
-    }
-
-    const version = <SemVer>coerce(parts[2].slice(2));
-
-    if (lt(version, minimumVersion) || gte(version, maximumVersion)) {
-      return {
-        hasRequiredDependencies: false,
-        errorMessage: `${executableName} version found was: ${version.format()}, but must be between ${minimumVersion.format()} and ${maximumVersion.format()}`,
-      };
-    }
+  if (lt(version, minimumVersion) || gte(version, maximumVersion)) {
+    return {
+      hasRequiredDependencies: false,
+      errorMessage: `${executableName} version found was: ${version.format()}, but must be between ${minimumVersion.format()} and ${maximumVersion.format()}`,
+    };
   }
 
   return {
@@ -154,15 +161,32 @@ export const packageResource = async (request: PackageRequest, context: any): Pr
   if (!request.lastPackageTimeStamp || request.lastBuildTimeStamp > request.lastPackageTimeStamp) {
     const packageHash = await context.amplify.hashDir(request.srcRoot, [DIST]);
     const zipFn = process.platform.startsWith('win') ? winZip : nixZip;
-    await zipFn(request.srcRoot, request.dstFilename, context.print);
+    try {
+      await zipFn(request.srcRoot, request.dstFilename, context.print);
+    } catch (err) {
+      throw new AmplifyError(
+        'PackagingLambdaFunctionError',
+        { message: `Packaging go function failed, error message was ${err.message}` },
+        err,
+      );
+    }
     return { packageHash };
   }
   return {};
 };
 
 const winZip = async (src: string, dest: string, print: any) => {
-  // get lambda zip tool
-  await execa(executableName, ['get', '-u', 'github.com/aws/aws-lambda-go/cmd/build-lambda-zip']);
+  // get lambda zip tool with the fix of https://go.dev/doc/go-get-install-deprecation
+  const version = getGoVersion();
+  try {
+    if (gte(version, <SemVer>coerce('1.17'))) {
+      await execa(executableName, ['install', 'github.com/aws/aws-lambda-go/cmd/build-lambda-zip@latest']);
+    } else {
+      await execa(executableName, ['get', '-u', 'github.com/aws/aws-lambda-go/cmd/build-lambda-zip']);
+    }
+  } catch (error: unknown) {
+    throw new Error(`Error installing build-lambda-zip: ${error}`);
+  }
   const goPath = process.env.GOPATH;
   if (!goPath) {
     throw new Error('Could not determine GOPATH. Make sure it is set.');
@@ -186,7 +210,7 @@ const nixZip = async (src: string, dest: string): Promise<void> => {
       resolve();
     });
 
-    file.on('error', err => {
+    file.on('error', (err) => {
       reject(new Error(`Failed to zip with error: [${err}]`));
     });
 
@@ -205,6 +229,6 @@ const nixZip = async (src: string, dest: string): Promise<void> => {
       ignore: [mainFile],
     });
 
-    zip.finalize();
+    void zip.finalize();
   });
 };

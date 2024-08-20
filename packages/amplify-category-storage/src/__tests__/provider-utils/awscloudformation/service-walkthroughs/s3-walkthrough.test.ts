@@ -1,5 +1,5 @@
-import { $TSAny, $TSContext, AmplifySupportedService, stateManager } from 'amplify-cli-core';
-import { prompter } from 'amplify-prompts';
+import { $TSAny, $TSContext, AmplifySupportedService, stateManager } from '@aws-amplify/amplify-cli-core';
+import { prompter } from '@aws-amplify/amplify-prompts';
 import * as uuid from 'uuid';
 import { AmplifyS3ResourceStackTransform } from '../../../../provider-utils/awscloudformation/cdk-stack-builder/s3-stack-transform';
 import {
@@ -16,8 +16,8 @@ import {
 import { MigrationParams, S3InputState } from '../../../../provider-utils/awscloudformation/service-walkthroughs/s3-user-input-state';
 import { addWalkthrough, updateWalkthrough } from '../../../../provider-utils/awscloudformation/service-walkthroughs/s3-walkthrough';
 
-jest.mock('amplify-cli-core');
-jest.mock('amplify-prompts');
+jest.mock('@aws-amplify/amplify-cli-core');
+jest.mock('@aws-amplify/amplify-prompts');
 jest.mock('../../../../provider-utils/awscloudformation/service-walkthroughs/s3-user-input-state');
 jest.mock('../../../../provider-utils/awscloudformation/cdk-stack-builder/s3-stack-transform');
 jest.mock('../../../../provider-utils/awscloudformation/service-walkthroughs/s3-auth-api');
@@ -48,12 +48,11 @@ describe('add s3 walkthrough tests', () => {
         getUserPoolGroupList: () => {
           return [];
         },
-        // eslint-disable-next-line
-        getResourceStatus: () => {
+        getResourceStatus: async () => {
           return { allResources: S3MockDataBuilder.getMockGetAllResourcesNoExistingLambdas() };
-        }, //eslint-disable-line
-        copyBatch: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
-        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
+        },
+        copyBatch: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
+        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
         pathManager: {
           getBackendDirPath: jest.fn().mockReturnValue('mockTargetDir'),
         },
@@ -71,7 +70,7 @@ describe('add s3 walkthrough tests', () => {
     });
     jest.spyOn(AmplifyS3ResourceStackTransform.prototype, 'transform').mockImplementation(() => Promise.resolve());
     jest.spyOn(s3AuthAPI, 'migrateAuthDependencyResource').mockReturnValue(
-      new Promise((resolve, _reject) => {
+      new Promise((resolve) => {
         process.nextTick(() => resolve(true));
       }),
     );
@@ -95,7 +94,7 @@ describe('add s3 walkthrough tests', () => {
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMeta);
 
-    let options = {};
+    const options = {};
     const returnedResourcename = await addWalkthrough(mockContext, S3MockDataBuilder.mockFilePath, mockContext, options);
 
     expect(returnedResourcename).toEqual(S3MockDataBuilder.mockResourceName);
@@ -127,7 +126,7 @@ describe('add s3 walkthrough tests', () => {
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMeta);
 
-    let options = {};
+    const options = {};
     const returnedResourcename = await addWalkthrough(mockContext, S3MockDataBuilder.mockFilePath, mockContext, options);
 
     expect(returnedResourcename).toEqual(S3MockDataBuilder.mockResourceName);
@@ -157,11 +156,11 @@ describe('add s3 walkthrough tests', () => {
     prompter.yesOrNo = jest
       .fn()
       .mockReturnValueOnce(true) //Do you want to add a Lambda Trigger ?
-      .mockResolvedValueOnce(false); //Do you want to edit the lamdba function now?
+      .mockResolvedValueOnce(false); //Do you want to edit the lambda function now?
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMeta);
 
-    let options = {};
+    const options = {};
     const returnedResourcename = await addWalkthrough(mockContext, S3MockDataBuilder.mockFilePath, mockContext, options);
 
     expect(returnedResourcename).toEqual(S3MockDataBuilder.mockResourceName);
@@ -173,7 +172,7 @@ describe('add s3 walkthrough tests', () => {
     });
     jest.spyOn(AmplifyS3ResourceStackTransform.prototype, 'transform').mockImplementation(() => Promise.resolve());
     //Add Existing Lambda functions in resource status
-    mockContext.amplify.getResourceStatus = () => {
+    mockContext.amplify.getResourceStatus = async () => {
       return { allResources: S3MockDataBuilder.getMockGetAllResources2ExistingLambdas() };
     };
 
@@ -199,11 +198,11 @@ describe('add s3 walkthrough tests', () => {
     prompter.yesOrNo = jest
       .fn()
       .mockReturnValueOnce(true) //Do you want to add a Lambda Trigger ?
-      .mockResolvedValueOnce(false); //Do you want to edit the lamdba function now?
+      .mockResolvedValueOnce(false); //Do you want to edit the lambda function now?
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMeta);
 
-    let options = {};
+    const options = {};
     const returnedResourcename = await addWalkthrough(mockContext, S3MockDataBuilder.mockFilePath, mockContext, options);
 
     expect(returnedResourcename).toEqual(S3MockDataBuilder.mockResourceName);
@@ -242,8 +241,8 @@ describe('update s3 permission walkthrough tests', () => {
         getResourceStatus: () => {
           return { allResources: S3MockDataBuilder.getMockGetAllResourcesNoExistingLambdas() };
         }, //eslint-disable-line
-        copyBatch: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
-        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
+        copyBatch: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
+        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
         pathManager: {
           getBackendDirPath: jest.fn().mockReturnValue('mockTargetDir'),
         },
@@ -446,8 +445,8 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
         getResourceStatus: () => {
           return { allResources: S3MockDataBuilder.getMockGetAllResourcesNoExistingLambdas() };
         }, //eslint-disable-line
-        copyBatch: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
-        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
+        copyBatch: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
+        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
         pathManager: {
           getBackendDirPath: jest.fn().mockReturnValue('mockTargetDir'),
         },
@@ -489,7 +488,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
     prompter.confirmContinue = jest
       .fn()
       .mockReturnValueOnce(true) //Do you want to add a Lambda Trigger ?
-      .mockResolvedValueOnce(false); //Do you want to edit the lamdba function now?
+      .mockResolvedValueOnce(false); //Do you want to edit the lambda function now?
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMetaForUpdateWalkthroughLambda);
     const returnedResourcename = await updateWalkthrough(mockContext);
@@ -539,7 +538,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
     //Then we expect that the saveCliInputPayload is called with the newly selected Lambda trigger [ expectedCLIInputsJSON ]
 
     //Add Existing Lambda functions in resource status
-    mockContext.amplify.getResourceStatus = () => {
+    mockContext.amplify.getResourceStatus = async () => {
       return { allResources: S3MockDataBuilder.getMockGetAllResources2ExistingLambdas() };
     };
 
@@ -586,7 +585,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
     //Then we expect that the saveCliInputPayload is called with the newly created lambda function trigger[ expectedCLIInputsJSON ]
 
     //Add Existing Lambda functions in resource status
-    mockContext.amplify.getResourceStatus = () => {
+    mockContext.amplify.getResourceStatus = async () => {
       return { allResources: S3MockDataBuilder.getMockGetAllResources2ExistingLambdas() };
     };
 
@@ -619,7 +618,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
       .mockResolvedValueOnce(S3TriggerFunctionType.NEW_FUNCTION);
 
     //add new function
-    prompter.confirmContinue = jest.fn().mockResolvedValueOnce(false); //Do you want to edit the lamdba function now?
+    prompter.confirmContinue = jest.fn().mockResolvedValueOnce(false); //Do you want to edit the lambda function now?
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMetaForUpdateWalkthroughLambda);
 
@@ -635,7 +634,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
     //Then we expect that the saveCliInputPayload is called with the newly created lambda function trigger[ expectedCLIInputsJSON ]
 
     //Add Existing Lambda functions in resource status
-    mockContext.amplify.getResourceStatus = () => {
+    mockContext.amplify.getResourceStatus = async () => {
       return { allResources: S3MockDataBuilder.getMockGetAllResources2ExistingLambdas() };
     };
 
@@ -668,7 +667,7 @@ describe('update s3 lambda-trigger walkthrough tests', () => {
       .mockResolvedValueOnce(S3TriggerFunctionType.NEW_FUNCTION);
 
     //add new function
-    prompter.confirmContinue = jest.fn().mockResolvedValueOnce(false); //Do you want to edit the lamdba function now?
+    prompter.confirmContinue = jest.fn().mockResolvedValueOnce(false); //Do you want to edit the lambda function now?
 
     stateManager.getMeta = jest.fn().mockReturnValue(S3MockDataBuilder.mockAmplifyMetaForUpdateWalkthroughLambda);
 
@@ -708,12 +707,11 @@ describe('migrate s3 and update s3 permission walkthrough tests', () => {
             },
           };
         },
-        // eslint-disable-next-line
-        getResourceStatus: () => {
+        getResourceStatus: async () => {
           return { allResources: S3MockDataBuilder.getMockGetAllResourcesNoExistingLambdas() };
-        }, //eslint-disable-line
-        copyBatch: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
-        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve, reject) => resolve(true))),
+        },
+        copyBatch: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
+        updateamplifyMetaAfterResourceAdd: jest.fn().mockReturnValue(new Promise((resolve) => resolve(true))),
         pathManager: {
           getBackendDirPath: jest.fn().mockReturnValue('mockTargetDir'),
         },
@@ -964,7 +962,7 @@ class S3MockDataBuilder {
   }
 
   removeAuthPermission(permissionToBeRemoved: S3PermissionType): S3MockDataBuilder {
-    const newPermissions = this.defaultAuthPerms.filter(permission => permission !== permissionToBeRemoved);
+    const newPermissions = this.defaultAuthPerms.filter((permission) => permission !== permissionToBeRemoved);
     this.cliInputs.authAccess = newPermissions;
     return this;
   }

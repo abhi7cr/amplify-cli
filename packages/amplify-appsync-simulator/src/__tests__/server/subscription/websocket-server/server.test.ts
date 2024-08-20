@@ -4,6 +4,7 @@ import WS from 'ws';
 import getPort from 'get-port';
 import { PubSub } from 'graphql-subscriptions';
 import { parse } from 'graphql';
+import { REALTIME_SUBSCRIPTION_PATH } from '../../../../server/subscription/websocket-server/server';
 
 import { WebsocketSubscriptionServer, ConnectionContext } from '../../../../server/subscription/websocket-server/server';
 import { MESSAGE_TYPES } from '../../../../server/subscription/websocket-server/message-types';
@@ -52,9 +53,9 @@ describe('WebsocketSubscriptionServer', () => {
   const onSubscribeHandler = jest.fn();
   const onConnectHandler = jest.fn();
   let serverPort = 20005;
-  const SUBSCRIPTION_PATH = '/graphql';
   let connectionTimeoutDuration: number;
   let keepAlive: number;
+
   beforeEach(async () => {
     jest.resetAllMocks();
     httpServer = createServer();
@@ -67,7 +68,7 @@ describe('WebsocketSubscriptionServer', () => {
         connectionTimeoutDuration,
         keepAlive,
       },
-      { server: httpServer, path: SUBSCRIPTION_PATH },
+      { server: httpServer, path: REALTIME_SUBSCRIPTION_PATH },
     );
 
     serverPort = await getPort({
@@ -76,15 +77,24 @@ describe('WebsocketSubscriptionServer', () => {
     httpServer.listen(serverPort);
     server.start();
   });
-  afterEach(() => {
-    server.stop();
-    httpServer.close();
+
+  afterEach(async () => {
+    await server?.stop();
+    httpServer?.close();
+  });
+
+  beforeAll((done) => {
+    done();
+  });
+
+  afterAll((done) => {
+    done();
   });
 
   describe('Connect', () => {
-    it('should close connection when the protocol is not graphql-ws', done => {
-      const client = new WS(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`, 'something');
-      client.addEventListener('close', event => {
+    it('should close connection when the protocol is not graphql-ws', (done) => {
+      const client = new WS(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`, 'something');
+      client.addEventListener('close', (event) => {
         expect(event.code).toEqual(1002);
         expect(onConnectHandler).not.toHaveBeenCalled();
         done();
@@ -92,9 +102,9 @@ describe('WebsocketSubscriptionServer', () => {
     });
 
     it('should accept connection when the protocol is graphql-ws', async () => {
-      const client = new WS(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`, 'graphql-ws');
-      const messagePromise = new Promise((resolve, _) => {
-        client.addEventListener('close', event => {
+      const client = new WS(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`, 'graphql-ws');
+      const messagePromise = new Promise((resolve) => {
+        client.addEventListener('close', (event) => {
           expect(event.wasClean).toBeTruthy();
           resolve(undefined);
         });
@@ -113,19 +123,18 @@ describe('WebsocketSubscriptionServer', () => {
         header: Buffer.from(JSON.stringify(header)).toString('base64'),
       });
 
-      const client = new WS(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}?${query.toString()}`, 'graphql-ws');
+      const client = new WS(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}?${query.toString()}`, 'graphql-ws');
       await waitForConnection(client);
       client.close();
       expect(onConnectHandler).toHaveBeenCalled();
-      console.log(onConnectHandler.mock.calls[0][1]);
       expect(onConnectHandler.mock.calls[0][1]).toEqual(header);
     });
 
     it('should fail connection when onConnectionHandler throw and error', async () => {
       onConnectHandler.mockRejectedValue('error');
-      const client = new WS(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`, 'graphql-ws');
-      const messagePromise = new Promise((resolve, _) => {
-        client.addEventListener('close', event => {
+      const client = new WS(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`, 'graphql-ws');
+      const messagePromise = new Promise((resolve) => {
+        client.addEventListener('close', (event) => {
           expect(event.code).toEqual(1002);
           resolve(undefined);
         });
@@ -141,7 +150,7 @@ describe('WebsocketSubscriptionServer', () => {
     let client;
     beforeEach(async () => {
       jest.useFakeTimers();
-      const url = new URL(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`).toString();
+      const url = new URL(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`).toString();
       client = new WS(url, 'graphql-ws');
       await waitForConnection(client);
     });
@@ -155,7 +164,7 @@ describe('WebsocketSubscriptionServer', () => {
         type: MESSAGE_TYPES.GQL_CONNECTION_INIT,
         payload: {},
       };
-      const messagePromise = new Promise((resolve, _) => {
+      const messagePromise = new Promise((resolve) => {
         client.onmessage = (message: WS.MessageEvent) => {
           const data = JSON.parse(message.data as string);
           expect(data.type).toEqual(MESSAGE_TYPES.GQL_CONNECTION_ACK);
@@ -174,7 +183,7 @@ describe('WebsocketSubscriptionServer', () => {
         type: 'invalid',
         payload: {},
       };
-      const messagePromise = new Promise((resolve, _) => {
+      const messagePromise = new Promise((resolve) => {
         client.onmessage = (message: WS.MessageEvent) => {
           const data = JSON.parse(message.data as string);
           expect(data.type).toEqual(MESSAGE_TYPES.GQL_ERROR);
@@ -224,10 +233,10 @@ describe('WebsocketSubscriptionServer', () => {
     const id = 'some-unique-id';
 
     beforeEach(async () => {
-      const url = new URL(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`).toString();
+      const url = new URL(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`).toString();
       client = new WS(url, 'graphql-ws');
       pubsub = new PubSub();
-      onConnectHandler.mockImplementation(context => {
+      onConnectHandler.mockImplementation((context) => {
         connectionContext = context;
       });
       await waitForConnection(client);
@@ -381,7 +390,7 @@ describe('WebsocketSubscriptionServer', () => {
       const data = {
         onMessage: 'hello from iterator',
       };
-      pubsub.publish('onMessage', data);
+      void pubsub.publish('onMessage', data);
       const msg = await waitForMessage(client, MESSAGE_TYPES.GQL_DATA);
       expect(msg).toEqual({
         type: MESSAGE_TYPES.GQL_DATA,
@@ -411,12 +420,12 @@ describe('WebsocketSubscriptionServer', () => {
     const id = 'some-unique-id';
 
     beforeEach(async () => {
-      const url = new URL(`ws://localhost:${serverPort}${SUBSCRIPTION_PATH}`).toString();
+      const url = new URL(`ws://localhost:${serverPort}${REALTIME_SUBSCRIPTION_PATH}`).toString();
       client = new WS(url, 'graphql-ws');
       pubsub = new PubSub();
       asyncIterator = pubsub.asyncIterator('something');
       onSubscribeHandler.mockReturnValue(asyncIterator);
-      onConnectHandler.mockImplementation(context => {
+      onConnectHandler.mockImplementation((context) => {
         connectionContext = context;
       });
       await waitForConnection(client);

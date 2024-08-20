@@ -1,12 +1,14 @@
+/* eslint-disable spellcheck/spell-checker */
 const fs = require('fs-extra');
 const path = require('path');
-const { pathManager, PathConstants } = require('amplify-cli-core');
+const { pathManager, PathConstants, stateManager } = require('@aws-amplify/amplify-cli-core');
 const glob = require('glob');
 const constants = require('../constants/plugin-constants');
 const utils = require('../utils/amplify-context-utils');
 const clientFactory = require('../utils/client-factory');
 const consolePathManager = require('../utils/path-manager');
 const buildUtils = require('./build-utils');
+const { ensureEnvParamManager } = require('@aws-amplify/amplify-environment-parameters');
 
 function initCFNTemplate(context, templateFilePath) {
   const templateContent = context.amplify.readJsonFile(templateFilePath);
@@ -80,27 +82,13 @@ async function initCurrBackendMeta(context, category, resourceName, type, timeSt
   await storeCurrentCloudBackend(context);
 }
 
-function initTeamProviderInfo(context, category, resourceName, type) {
-  const categories = constants.CATEGORIES;
-
-  const { amplify } = context;
-  const currEnv = amplify.getEnvInfo().envName;
-  const teamProviderInfoFilePath = consolePathManager.getProviderInfoFilePath(context);
-  const teamProviderInfo = amplify.readJsonFile(teamProviderInfoFilePath);
-  if (!teamProviderInfo[currEnv][categories]) {
-    teamProviderInfo[currEnv][categories] = {};
-  }
-
-  if (!teamProviderInfo[currEnv][categories][category]) {
-    teamProviderInfo[currEnv][categories][category] = {};
-  }
-
+async function initHostingEnvParams(context, category, resourceName, type) {
+  const resourceParamManager = (await ensureEnvParamManager()).instance.getResourceParamManager(category, resourceName);
   const appId = utils.getAppIdForCurrEnv(context);
-  teamProviderInfo[currEnv][categories][category][resourceName] = {
+  resourceParamManager.setAllParams({
     appId,
     type,
-  };
-  fs.writeFileSync(teamProviderInfoFilePath, JSON.stringify(teamProviderInfo, null, 4));
+  });
 }
 
 async function deleteConsoleConfigFromCurrMeta(context) {
@@ -121,28 +109,11 @@ async function deleteConsoleConfigFromCurrMeta(context) {
   await storeCurrentCloudBackend(context);
 }
 
-function deleteConsoleConfigFromTeamProviderInfo(context) {
-  const categories = constants.CATEGORIES;
+async function deleteHostingEnvParams() {
   const category = constants.CATEGORY;
   const resourceName = constants.CONSOLE_RESOURCE_NAME;
 
-  const { amplify } = context;
-  const currEnv = amplify.getEnvInfo().envName;
-  const teamProviderInfoFilePath = consolePathManager.getProviderInfoFilePath(context);
-  const teamProviderInfo = amplify.readJsonFile(teamProviderInfoFilePath);
-  if (!teamProviderInfo[currEnv][categories]) {
-    return;
-  }
-
-  if (!teamProviderInfo[currEnv][categories][category]) {
-    return;
-  }
-
-  if (!teamProviderInfo[currEnv][categories][category][resourceName]) {
-    return;
-  }
-  teamProviderInfo[currEnv][categories][category][resourceName] = undefined;
-  fs.writeFileSync(teamProviderInfoFilePath, JSON.stringify(teamProviderInfo, null, 4));
+  (await ensureEnvParamManager()).instance.removeResourceParamManager(category, resourceName);
 }
 
 function initBackendConfig(context, category, resourceName, type) {
@@ -161,18 +132,10 @@ function initBackendConfig(context, category, resourceName, type) {
   fs.writeFileSync(backendConfigFilePath, JSON.stringify(backendConfig, null, 4));
 }
 
-function loadConsoleConfigFromTeamProviderinfo(context) {
-  const categories = constants.CATEGORIES;
-  const category = constants.CATEGORY;
-  const resource = constants.CONSOLE_RESOURCE_NAME;
-  const teamProviderInfo = utils.getTeamProviderInfo(context);
-  const currEnv = utils.getCurrEnv(context);
-
-  return (
-    teamProviderInfo[currEnv][categories] &&
-    teamProviderInfo[currEnv][categories][category] &&
-    teamProviderInfo[currEnv][categories][category][resource]
-  );
+async function loadConsoleConfigFromTeamProviderinfo() {
+  return (await ensureEnvParamManager()).instance
+    .getResourceParamManager(constants.CATEGORY, constants.CONSOLE_RESOURCE_NAME)
+    .getAllParams();
 }
 
 async function storeCurrentCloudBackend(context) {
@@ -196,25 +159,22 @@ async function storeCurrentCloudBackend(context) {
     });
 
     await buildUtils.zipFile(currentCloudBackendDir, zipFilePath, cliJSONFiles);
-    await uploadFile(s3, zipFilePath, zipFilename, context);
-    await uploadFile(s3, amplifyMetaFilePath, 'amplify-meta.json', context);
-    await uploadFile(s3, backendConfigFilePath, 'backend-config.json', context);
+    await uploadFile(s3, zipFilePath, zipFilename);
+    await uploadFile(s3, amplifyMetaFilePath, 'amplify-meta.json');
+    await uploadFile(s3, backendConfigFilePath, 'backend-config.json');
   } finally {
     fs.removeSync(tempDir);
   }
 }
 
-async function uploadFile(s3, filePath, key, context) {
-  const projectDetails = context.amplify.getProjectDetails();
-  const { envName } = context.amplify.getEnvInfo();
+// eslint-disable-next-line consistent-return
+async function uploadFile(s3, filePath, key) {
   if (fs.existsSync(filePath)) {
     const s3Params = {
       Body: fs.createReadStream(filePath),
       Key: key,
     };
-    const projectBucket = projectDetails.amplifyMeta.providers
-      ? projectDetails.amplifyMeta.providers[constants.PROVIDER].DeploymentBucketName
-      : projectDetails.teamProviderInfo[envName][constants.PROVIDER].DeploymentBucketName;
+    const projectBucket = stateManager.getMeta().providers[constants.PROVIDER].DeploymentBucketName;
     s3Params.Bucket = projectBucket;
     await s3.putObject(s3Params).promise();
     return projectBucket;
@@ -225,9 +185,9 @@ module.exports = {
   initCFNTemplate,
   initMetaFile,
   initCurrBackendMeta,
-  initTeamProviderInfo,
+  initHostingEnvParams,
   initBackendConfig,
   loadConsoleConfigFromTeamProviderinfo,
-  deleteConsoleConfigFromTeamProviderInfo,
+  deleteHostingEnvParams,
   deleteConsoleConfigFromCurrMeta,
 };

@@ -1,6 +1,6 @@
 {
   "name": "amplify-java-function-template-provider",
-  "version": "1.5.12",
+  "version": "1.5.24",
   "description": "JAVA templates supplied by the Amplify Team",
   "repository": {
     "type": "git",
@@ -18,13 +18,15 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rimraf lib tsconfig.tsbuildinfo"
+    "clean": "rimraf lib tsconfig.tsbuildinfo node_modules",
+    "extract-api": "ts-node ../../scripts/extract-api.ts"
   },
   "dependencies": {
-    "amplify-function-plugin-interface": "1.9.4",
-    "lodash": "^4.17.21"
+    "@aws-amplify/amplify-function-plugin-interface": "1.12.1"
   },
-  "devDependencies": {
-    "@types/inquirer": "^6.5.0"
+  "berry": {
+    "plugins": [
+      "@yarn/plugin-typescript"
+    ]
   }
 }

@@ -1,4 +1,4 @@
-import { $TSAny } from 'amplify-cli-core';
+import { $TSAny } from '@aws-amplify/amplify-cli-core';
 import {
   addAuthWithDefault,
   addAuthWithMaxOptions,
@@ -11,8 +11,9 @@ import {
   getProjectMeta,
   getUserPool,
   initJSProjectWithProfile,
+  replaceOverrideFileWithProjectInfo,
   runAmplifyAuthConsole,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
@@ -20,7 +21,7 @@ const PROJECT_NAME = 'authTest';
 const defaultSettings = {
   name: PROJECT_NAME,
 };
-describe('zero config auth ', () => {
+describe('zero config auth', () => {
   let projRoot: string;
   beforeEach(async () => {
     projRoot = await createNewProjectDir('zero-config-auth');
@@ -40,14 +41,14 @@ describe('zero config auth ', () => {
     const authMeta: $TSAny = Object.values(meta.auth)[1];
 
     expect(authMeta.frontendAuthConfig).toMatchInlineSnapshot(`
-      Object {
+      {
         "mfaConfiguration": "ON",
-        "mfaTypes": Array [
+        "mfaTypes": [
           "SMS",
           "TOTP",
         ],
-        "passwordProtectionSettings": Object {
-          "passwordPolicyCharacters": Array [
+        "passwordProtectionSettings": {
+          "passwordPolicyCharacters": [
             "REQUIRES_LOWERCASE",
             "REQUIRES_UPPERCASE",
             "REQUIRES_NUMBERS",
@@ -55,17 +56,17 @@ describe('zero config auth ', () => {
           ],
           "passwordPolicyMinLength": 8,
         },
-        "signupAttributes": Array [
+        "signupAttributes": [
           "EMAIL",
         ],
-        "socialProviders": Array [
+        "socialProviders": [
           "FACEBOOK",
           "GOOGLE",
           "AMAZON",
           "APPLE",
         ],
-        "usernameAttributes": Array [],
-        "verificationMechanisms": Array [
+        "usernameAttributes": [],
+        "verificationMechanisms": [
           "EMAIL",
         ],
       }
@@ -74,24 +75,42 @@ describe('zero config auth ', () => {
 
   it('...should init a project and add auth with defaults with overrides', async () => {
     await initJSProjectWithProfile(projRoot, defaultSettings);
-    await addAuthWithDefault(projRoot, {});
+    await addAuthWithDefault(projRoot);
     await amplifyPushAuth(projRoot);
     await runAmplifyAuthConsole(projRoot);
     const meta = getProjectMeta(projRoot);
-    const authResourceName = Object.keys(meta.auth).filter(key => meta.auth[key].service === 'Cognito');
-    const id = Object.keys(meta.auth).map(key => meta.auth[key])[0].output.UserPoolId;
+    const authResourceName = Object.keys(meta.auth).filter((key) => meta.auth[key].service === 'Cognito');
+    const id = Object.keys(meta.auth).map((key) => meta.auth[key])[0].output.UserPoolId;
     const userPool = await getUserPool(id, meta.providers.awscloudformation.Region);
     expect(userPool.UserPool).toBeDefined();
 
     // override new env
-    await amplifyOverrideAuth(projRoot, {});
-    const srcOverrideFilePath = path.join(__dirname, '..', '..', 'overrides', 'override-auth.ts');
+    await amplifyOverrideAuth(projRoot);
+
+    // this is where we will write our override logic to
     const destOverrideFilePath = path.join(projRoot, 'amplify', 'backend', 'auth', `${authResourceName}`, 'override.ts');
-    fs.copyFileSync(srcOverrideFilePath, destOverrideFilePath);
+
+    // test override file in compilation error state
+    const srcInvalidOverrideCompileError = path.join(__dirname, '..', '..', 'overrides', 'override-compile-error.txt');
+    fs.copyFileSync(srcInvalidOverrideCompileError, destOverrideFilePath);
+    await expect(amplifyPushOverride(projRoot)).rejects.toThrowError();
+
+    // test override file in runtime error state
+    const srcInvalidOverrideRuntimeError = path.join(__dirname, '..', '..', 'overrides', 'override-runtime-error.txt');
+    fs.copyFileSync(srcInvalidOverrideRuntimeError, destOverrideFilePath);
+    await expect(amplifyPushOverride(projRoot)).rejects.toThrowError();
+
+    // test happy path
+    const srcOverrideFilePath = path.join(__dirname, '..', '..', 'overrides', 'override-auth.ts');
+    replaceOverrideFileWithProjectInfo(srcOverrideFilePath, destOverrideFilePath, 'integtest', PROJECT_NAME);
+    // should throw error if AMPLIFY_CLI_DISABLE_SCRIPTING_FEATURES is set
+    await expect(amplifyPushOverride(projRoot, false, { AMPLIFY_CLI_DISABLE_SCRIPTING_FEATURES: 'true' })).rejects.toThrowError();
+    // should succeed now
     await amplifyPushOverride(projRoot);
-    // check overidden config
-    const overridenUserPool = await getUserPool(id, meta.providers.awscloudformation.Region);
-    expect(overridenUserPool.UserPool).toBeDefined();
-    expect(overridenUserPool.UserPool.DeviceConfiguration.ChallengeRequiredOnNewDevice).toBe(true);
+
+    // check overwritten config
+    const overwrittenUserPool = await getUserPool(id, meta.providers.awscloudformation.Region);
+    expect(overwrittenUserPool.UserPool).toBeDefined();
+    expect(overwrittenUserPool.UserPool.DeviceConfiguration.ChallengeRequiredOnNewDevice).toBe(true);
   });
 });

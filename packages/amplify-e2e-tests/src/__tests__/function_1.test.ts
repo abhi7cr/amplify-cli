@@ -1,14 +1,27 @@
-import { initJSProjectWithProfile, deleteProject, amplifyPushAuth, amplifyPush } from 'amplify-e2e-core';
-import { addFunction, functionBuild, addLambdaTrigger } from 'amplify-e2e-core';
-import { addSimpleDDB } from 'amplify-e2e-core';
-import { addKinesis } from 'amplify-e2e-core';
-import { createNewProjectDir, deleteProjectDir, getProjectMeta, getFunction } from 'amplify-e2e-core';
-import { addApiWithoutSchema, updateApiSchema } from 'amplify-e2e-core';
-
-import { appsyncGraphQLRequest } from 'amplify-e2e-core';
-import { getCloudWatchLogs, putKinesisRecords, invokeFunction, getEventSourceMappings } from 'amplify-e2e-core';
-import { retry } from 'amplify-e2e-core';
-import _ from 'lodash';
+import {
+  initJSProjectWithProfile,
+  deleteProject,
+  amplifyPushAuth,
+  amplifyPush,
+  addFunction,
+  functionBuild,
+  addLambdaTrigger,
+  addSimpleDDB,
+  addKinesis,
+  createNewProjectDir,
+  deleteProjectDir,
+  getProjectMeta,
+  getFunction,
+  addApiWithoutSchema,
+  updateApiSchema,
+  appsyncGraphQLRequest,
+  getCloudWatchLogs,
+  putKinesisRecords,
+  invokeFunction,
+  getEventSourceMappings,
+  retry,
+  generateRandomShortId,
+} from '@aws-amplify/amplify-e2e-core';
 
 describe('nodejs', () => {
   describe('amplify add function', () => {
@@ -25,14 +38,13 @@ describe('nodejs', () => {
 
     it('init a project and add simple function and uncomment cors header', async () => {
       await initJSProjectWithProfile(projRoot, {});
-      const random = Math.floor(Math.random() * 10000);
-      const functionName = `testcorsfunction${random}`;
+      const functionName = `testcorsfunction${generateRandomShortId()}`;
       process.env.AMPLIFY_CLI_LAMBDA_CORS_HEADER = 'true';
       await addFunction(projRoot, { functionTemplate: 'Hello World', name: functionName }, 'nodejs');
-      await functionBuild(projRoot, {});
+      await functionBuild(projRoot);
       await amplifyPushAuth(projRoot);
       const meta = getProjectMeta(projRoot);
-      const { Arn: functionArn, Name, Region: region } = Object.keys(meta.function).map(key => meta.function[key])[0].output;
+      const { Arn: functionArn, Name, Region: region } = Object.keys(meta.function).map((key) => meta.function[key])[0].output;
       expect(functionArn).toBeDefined();
       expect(functionName).toBeDefined();
       expect(region).toBeDefined();
@@ -48,10 +60,14 @@ describe('nodejs', () => {
     it('init a project and add simple function', async () => {
       await initJSProjectWithProfile(projRoot, {});
       await addFunction(projRoot, { functionTemplate: 'Hello World' }, 'nodejs');
-      await functionBuild(projRoot, {});
+      await functionBuild(projRoot);
       await amplifyPushAuth(projRoot);
       const meta = getProjectMeta(projRoot);
-      const { Arn: functionArn, Name: functionName, Region: region } = Object.keys(meta.function).map(key => meta.function[key])[0].output;
+      const {
+        Arn: functionArn,
+        Name: functionName,
+        Region: region,
+      } = Object.keys(meta.function).map((key) => meta.function[key])[0].output;
       expect(functionArn).toBeDefined();
       expect(functionName).toBeDefined();
       expect(region).toBeDefined();
@@ -67,10 +83,14 @@ describe('nodejs', () => {
       await updateApiSchema(projRoot, 'graphqltriggerinfra', 'simple_model.graphql');
       await addFunction(projRoot, { functionTemplate: 'Lambda trigger', triggerType: 'DynamoDB' }, 'nodejs', addLambdaTrigger);
 
-      await functionBuild(projRoot, {});
+      await functionBuild(projRoot);
       await amplifyPush(projRoot);
       const meta = getProjectMeta(projRoot);
-      const { Arn: functionArn, Name: functionName, Region: region } = Object.keys(meta.function).map(key => meta.function[key])[0].output;
+      const {
+        Arn: functionArn,
+        Name: functionName,
+        Region: region,
+      } = Object.keys(meta.function).map((key) => meta.function[key])[0].output;
       expect(functionArn).toBeDefined();
       expect(functionName).toBeDefined();
       expect(region).toBeDefined();
@@ -82,24 +102,24 @@ describe('nodejs', () => {
         variables: null,
       });
 
-      const appsyncResource = Object.keys(meta.api).map(key => meta.api[key])[0];
+      const appsyncResource = Object.keys(meta.api).map((key) => meta.api[key])[0];
 
       await retry(
         () => getEventSourceMappings(functionName, region),
-        res => res.length > 0 && res[0].State === 'Enabled',
+        (res) => res.length > 0 && res[0].State === 'Enabled',
       );
 
       const fireGqlRequestAndCheckLogs: () => Promise<boolean> = async () => {
         const resp = (await appsyncGraphQLRequest(appsyncResource, createGraphQLPayload(Math.round(Math.random() * 1000), 'amplify'))) as {
           data: { createTodo: { id: string; content: string } };
         };
-        const id = resp.data.createTodo.id;
+        const { id } = resp.data.createTodo;
         if (!id) {
           return false;
         }
         await retry(
           () => getCloudWatchLogs(region, `/aws/lambda/${functionName}`),
-          logs => !!logs.find(logEntry => logEntry.message.includes(`"id":{"S":"${id}"},"content":{"S":"amplify"}`)),
+          (logs) => !!logs.find((logEntry) => logEntry.message.includes(`"id":{"S":"${id}"},"content":{"S":"amplify"}`)),
           {
             stopOnError: false,
             times: 2,
@@ -108,7 +128,7 @@ describe('nodejs', () => {
         return true;
       };
 
-      await retry(fireGqlRequestAndCheckLogs, res => res, {
+      await retry(fireGqlRequestAndCheckLogs, (res) => res, {
         stopOnError: false,
         times: 2,
       });
@@ -116,14 +136,17 @@ describe('nodejs', () => {
 
     it('records put into kinesis stream should result in trigger called in minimal kinesis + trigger infra', async () => {
       await initJSProjectWithProfile(projRoot, {});
-      const random = Math.floor(Math.random() * 10000);
-      await addKinesis(projRoot, { rightName: `kinesisintegtest${random}`, wrongName: '$' });
+      await addKinesis(projRoot, { rightName: `kinesisintegtest${generateRandomShortId()}`, wrongName: '$' });
       await addFunction(projRoot, { functionTemplate: 'Lambda trigger', triggerType: 'Kinesis' }, 'nodejs', addLambdaTrigger);
 
-      await functionBuild(projRoot, {});
+      await functionBuild(projRoot);
       await amplifyPushAuth(projRoot);
       const meta = getProjectMeta(projRoot);
-      const { Arn: functionArn, Name: functionName, Region: region } = Object.keys(meta.function).map(key => meta.function[key])[0].output;
+      const {
+        Arn: functionArn,
+        Name: functionName,
+        Region: region,
+      } = Object.keys(meta.function).map((key) => meta.function[key])[0].output;
       expect(functionArn).toBeDefined();
       expect(functionName).toBeDefined();
       expect(region).toBeDefined();
@@ -132,10 +155,10 @@ describe('nodejs', () => {
 
       await retry(
         () => getEventSourceMappings(functionName, region),
-        res => res.length > 0 && res[0].State === 'Enabled',
+        (res) => res.length > 0 && res[0].State === 'Enabled',
       );
 
-      const kinesisResource = Object.keys(meta.analytics).map(key => meta.analytics[key])[0];
+      const kinesisResource = Object.keys(meta.analytics).map((key) => meta.analytics[key])[0];
 
       const fireKinesisRequestAndCheckLogs = async () => {
         const resp = await putKinesisRecords(
@@ -148,11 +171,11 @@ describe('nodejs', () => {
           return false;
         }
 
-        let eventId = `${resp.Records[0].ShardId}:${resp.Records[0].SequenceNumber}`;
+        const eventId = `${resp.Records[0].ShardId}:${resp.Records[0].SequenceNumber}`;
 
         await retry(
           () => getCloudWatchLogs(meta.providers.awscloudformation.Region, `/aws/lambda/${functionName}`),
-          logs => !!logs.find(logEntry => logEntry.message.includes(eventId)),
+          (logs) => !!logs.find((logEntry) => logEntry.message.includes(eventId)),
           {
             stopOnError: false,
             times: 2,
@@ -161,7 +184,7 @@ describe('nodejs', () => {
         return true;
       };
 
-      await retry(fireKinesisRequestAndCheckLogs, res => res, {
+      await retry(fireKinesisRequestAndCheckLogs, (res) => res, {
         stopOnError: false,
         times: 2,
       });
@@ -228,7 +251,7 @@ describe('nodejs', () => {
         Arn: table1Arn,
         Region: table1Region,
         StreamArn: table1StreamArn,
-      } = Object.keys(meta.storage).map(key => meta.storage[key])[0].output;
+      } = Object.keys(meta.storage).map((key) => meta.storage[key])[0].output;
 
       expect(table1Name).toBeDefined();
       expect(table1Arn).toBeDefined();

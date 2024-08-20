@@ -8,7 +8,7 @@ export async function queryProvider(context) {
   const provider = await getProvider(context, providerPlugins);
   context.exeInfo.projectConfig.providers = [provider];
 
-  const providerModule = require(providerPlugins[provider]);
+  const providerModule = await import(providerPlugins[provider]);
   await providerModule.attachBackend(context);
 
   return context;
@@ -28,7 +28,7 @@ async function getProvider(context, providerPlugins) {
 
   const { inputParams } = context.exeInfo;
   if (inputParams && inputParams.amplify && inputParams.amplify.providers) {
-    inputParams.amplify.providers.forEach(provider => {
+    inputParams.amplify.providers.forEach((provider) => {
       provider = normalizeProviderName(provider, providerPluginList);
       if (provider) {
         providers.push(provider);

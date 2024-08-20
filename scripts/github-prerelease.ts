@@ -1,6 +1,6 @@
 import { join } from 'path';
 import { valid, lte } from 'semver';
-import { getVersionFromArgs, githubTagToSemver, releasesRequest, semverToGithubTag, uploadReleaseFile } from './github-common';
+import { getArgs, githubTagToSemver, releasesRequest, semverToGithubTag, uploadReleaseFile } from './github-common';
 import { readFile } from 'fs-extra';
 import { unifiedChangelogPath } from './constants';
 
@@ -9,7 +9,7 @@ import { unifiedChangelogPath } from './constants';
  */
 const binariesDir = join(__dirname, '..', 'out');
 const binaryNamePrefix = 'amplify-pkg-';
-const platformSuffixes = ['linux', 'macos', 'win.exe'];
+const platformSuffixes = ['linux', 'linux-arm64', 'macos', 'win.exe'];
 
 const validateVersion = async (version: string) => {
   if (!valid(version)) {
@@ -31,7 +31,7 @@ const validateVersion = async (version: string) => {
   }
 };
 
-const createPreRelease = async (version: string) => {
+const createPreRelease = async (version: string, commit: string) => {
   console.log('Creating draft pre-release');
   const { id: releaseId } = await releasesRequest('', {
     method: 'POST',
@@ -41,6 +41,7 @@ const createPreRelease = async (version: string) => {
       body: await readFile(unifiedChangelogPath, 'utf8'),
       draft: true,
       prerelease: true,
+      target_commitish: commit,
     }),
   });
 
@@ -48,13 +49,13 @@ const createPreRelease = async (version: string) => {
 
   await Promise.all(
     platformSuffixes
-      .map(suffix => `${binaryNamePrefix}${suffix}.tgz`)
-      .map(binName => join(binariesDir, binName))
-      .map(binPath => {
+      .map((suffix) => `${binaryNamePrefix}${suffix}.tgz`)
+      .map((binName) => join(binariesDir, binName))
+      .map((binPath) => {
         console.log(`Uploading ${binPath} to release`);
         return binPath;
       })
-      .map(binPath => uploadReleaseFile(releaseIdStr, binPath)),
+      .map((binPath) => uploadReleaseFile(releaseIdStr, binPath)),
   );
 
   console.log('Publishing pre-release');
@@ -68,9 +69,9 @@ const createPreRelease = async (version: string) => {
 
 const main = async () => {
   try {
-    const version = getVersionFromArgs();
+    const { version, commit } = getArgs();
     await validateVersion(version);
-    await createPreRelease(version);
+    await createPreRelease(version, commit);
     console.log('Done!');
   } catch (ex) {
     console.error(ex);

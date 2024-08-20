@@ -1,37 +1,49 @@
-export const name = 'remove';
-const category = 'auth';
-import { $TSContext, AmplifySupportedService, stateManager } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
+import { $TSContext, $TSMeta, AmplifyCategories, AmplifyError, AmplifySupportedService, stateManager } from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import { messages } from '../../provider-utils/awscloudformation/assets/string-maps';
 import { AuthInputState } from '../../provider-utils/awscloudformation/auth-inputs-manager/auth-input-state';
 
-export const run = async (context: $TSContext) => {
+export const name = 'remove';
+const category = 'auth';
+
+/**
+ * Entry point for remove auth
+ */
+export const run = async (context: $TSContext): Promise<void> => {
   const { amplify, parameters } = context;
   const resourceName = parameters.first;
   const meta = stateManager.getMeta();
-  const dependentResources = Object.keys(meta).some(e => {
-    return ['analytics', 'api', 'storage', 'function'].includes(e) && Object.keys(meta[e]).length > 0;
-  });
-  if (dependentResources) {
-    printer.info(messages.dependenciesExists);
-  }
-  const authResourceName = Object.keys(meta.auth).filter(resourceKey => {
-    return meta.auth[resourceKey].service === AmplifySupportedService.COGNITO;
-  });
 
-  try {
-    const resource = await amplify.removeResource(context, category, resourceName);
-    if (resource?.service === AmplifySupportedService.COGNITOUSERPOOLGROUPS) {
-      // update cli input here
-      const cliState = new AuthInputState(authResourceName[0]);
-      const cliInputPayload = cliState.getCLIInputPayload();
-      cliInputPayload.cognitoConfig.userPoolGroupList = [];
-      await cliState.saveCLIInputPayload(cliInputPayload);
-    }
-  } catch (err) {
-    printer.info(err.stack);
-    printer.error('There was an error removing the auth resource');
-    context.usageData.emitError(err);
-    process.exitCode = 1;
+  throwErrorIfProjectHasAnalytics(meta);
+
+  const hasPossiblyDependentResources = Object.keys(meta).some(
+    (categoryName) => ['api', 'storage', 'function'].includes(categoryName) && Object.keys(meta[categoryName]).length > 0,
+  );
+  if (hasPossiblyDependentResources) {
+    printer.warn(messages.dependenciesExists);
   }
+
+  const authResourceName = Object.keys(meta.auth).filter(
+    (resourceKey) => meta.auth[resourceKey].service === AmplifySupportedService.COGNITO,
+  );
+
+  const resource = await amplify.removeResource(context, category, resourceName);
+  if (resource?.service === AmplifySupportedService.COGNITOUSERPOOLGROUPS) {
+    // update cli input here
+    const cliState = new AuthInputState(context, authResourceName[0]);
+    const cliInputPayload = cliState.getCLIInputPayload();
+    cliInputPayload.cognitoConfig.userPoolGroupList = [];
+    await cliState.saveCLIInputPayload(cliInputPayload);
+  }
+};
+
+const throwErrorIfProjectHasAnalytics = (meta: $TSMeta): void => {
+  const analyticsCategoryMeta = meta[AmplifyCategories.ANALYTICS];
+  if (!analyticsCategoryMeta) return;
+  const analyticsResourceNames = Object.keys(analyticsCategoryMeta);
+  if (analyticsResourceNames.length === 0) return;
+  throw new AmplifyError('ResourceInUseError', {
+    message: 'Auth cannot be removed because the analytics category depends on it',
+    resolution: 'Run `amplify remove analytics` first, then retry removing auth',
+  });
 };

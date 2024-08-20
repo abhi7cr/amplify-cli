@@ -141,7 +141,7 @@ beforeAll(async () => {
       }),
     ],
     featureFlags: {
-      getBoolean: name => (name === 'improvePluralization' ? true : false),
+      getBoolean: (name) => (name === 'improvePluralization' ? true : false),
     } as FeatureFlagProvider,
   });
 
@@ -157,9 +157,7 @@ beforeAll(async () => {
     GRAPHQL_ENDPOINT = server.url + '/graphql';
     logDebug(`Using graphql url: ${GRAPHQL_ENDPOINT}`);
 
-    const apiKey = result.config.appSync.apiKey;
-
-    const idToken = signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME1, USERNAME1, [
+    const idToken = await signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME1, USERNAME1, [
       ADMIN_GROUP_NAME,
       PARTICIPANT_GROUP_NAME,
       WATCHER_GROUP_NAME,
@@ -168,7 +166,7 @@ beforeAll(async () => {
       Authorization: idToken,
     });
 
-    const accessToken = signUpAddToGroupAndGetJwtToken(
+    const accessToken = await signUpAddToGroupAndGetJwtToken(
       USER_POOL_ID,
       USERNAME1,
       USERNAME1,
@@ -179,19 +177,19 @@ beforeAll(async () => {
       Authorization: accessToken,
     });
 
-    const idToken2 = signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME2, USERNAME2, [DEVS_GROUP_NAME]);
+    const idToken2 = await signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME2, USERNAME2, [DEVS_GROUP_NAME]);
     GRAPHQL_CLIENT_2 = new GraphQLClient(GRAPHQL_ENDPOINT, {
       Authorization: idToken2,
     });
 
-    const idToken3 = signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME2, USERNAME3, []);
+    const idToken3 = await signUpAddToGroupAndGetJwtToken(USER_POOL_ID, USERNAME2, USERNAME3, []);
     GRAPHQL_CLIENT_3 = new GraphQLClient(GRAPHQL_ENDPOINT, {
       Authorization: idToken3,
     });
 
     // Wait for any propagation to avoid random
     // "The security token included in the request is invalid" errors
-    await new Promise<void>(res => setTimeout(() => res(), 5000));
+    await new Promise<void>((res) => setTimeout(() => res(), 5000));
   } catch (e) {
     console.error(e);
     expect(true).toEqual(false);
@@ -540,7 +538,7 @@ test('Test listPosts query when authorized', async () => {
   expect(firstPost.data.createPost.createdAt).toBeDefined();
   expect(firstPost.data.createPost.updatedAt).toBeDefined();
   expect(firstPost.data.createPost.owner).toEqual(USERNAME1);
-  const secondPost = await GRAPHQL_CLIENT_2.query(
+  await GRAPHQL_CLIENT_2.query(
     `mutation {
         createPost(input: { title: "testing list" }) {
             id
@@ -2386,7 +2384,7 @@ test(`Test createTestIdentity as admin.`, async () => {
     }`,
     {},
   );
-  const relevantPost = listResponse.data.listTestIdentities.items.find(p => p.id === getReq.data.getTestIdentity.id);
+  const relevantPost = listResponse.data.listTestIdentities.items.find((p) => p.id === getReq.data.getTestIdentity.id);
   logDebug(JSON.stringify(listResponse, null, 4));
   expect(relevantPost).toBeTruthy();
   expect(relevantPost.title).toEqual('Test title update');

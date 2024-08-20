@@ -9,19 +9,25 @@
   <a href="https://www.npmjs.com/package/@aws-amplify/cli">
     <img src="https://img.shields.io/npm/v/@aws-amplify/cli.svg" />
   </a>
-  <a href="https://circleci.com/gh/aws-amplify/amplify-cli">
-    <img src="https://img.shields.io/circleci/project/github/aws-amplify/amplify-cli/master.svg" alt="build:started">
-  </a>
 </p>
 
 ### Reporting Bugs/Feature Requests
 
 [![Open Bugs](https://img.shields.io/github/issues/aws-amplify/amplify-cli/bug?color=d73a4a&label=bugs)](https://github.com/aws-amplify/amplify-cli/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
 [![Feature Requests](https://img.shields.io/github/issues/aws-amplify/amplify-cli/feature-request?color=ff9001&label=feature%20requests)](https://github.com/aws-amplify/amplify-cli/issues?q=is%3Aissue+label%3Afeature-request+is%3Aopen)
-[![Enhancements](https://img.shields.io/github/issues/aws-amplify/amplify-cli/enhancement?color=4287f5&label=enhancement)](https://github.com/aws-amplify/amplify-cli/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
 [![Closed Issues](https://img.shields.io/github/issues-closed/aws-amplify/amplify-cli?color=%2325CC00&label=issues%20closed)](https://github.com/aws-amplify/amplify-cli/issues?q=is%3Aissue+is%3Aclosed+)
 
-# AWS Amplify CLI
+> [!Important]
+>
+> # Amplify Gen 2 is now generally available
+>
+> If you are starting a new project, we recommend starting with [Amplify Gen 2](https://github.com/aws-amplify/amplify-backend).
+>
+> If you are an existing Gen 1 customer, we recommend that you continue working with your Gen 1 Amplify project. We are actively developing migration tooling to aid in transitioning your project from Gen 1 to Gen 2. We remain committed to supporting both Gen 1 and Gen 2 for the foreseeable future.
+>
+> Customers on Gen 1 will continue to receive support for high-priority bugs and essential security updates.
+
+# AWS Amplify CLI (Gen 1)
 
 The AWS Amplify CLI is a toolchain which includes a robust feature set for simplifying mobile and web application development. The CLI uses AWS CloudFormation and nested stacks to allow you to add or modify configurations locally before you push them for execution in your account.
 
@@ -34,19 +40,12 @@ The AWS Amplify CLI is a toolchain which includes a robust feature set for simpl
 
 ## Install the CLI
 
-- Requires Node.js® version 12 or later
+- Requires Node.js® version 18 or later
 
 Install and configure the Amplify CLI as follows:
 
 ```bash
 $ npm install -g @aws-amplify/cli
-$ amplify configure
-```
-
-**_Note_**: If you're having permission issues on your system installing the CLI, please try the following command:
-
-```bash
-$ sudo npm install -g @aws-amplify/cli --unsafe-perm=true
 $ amplify configure
 ```
 
@@ -65,7 +64,7 @@ The Amplify CLI supports the commands shown in the following table.
 | amplify pull                                                           | Fetch upstream backend environment definition changes from the cloud and updates the local environment to match that definition.                                                                                     |
 | amplify publish                                                        | Runs `amplify push`, publishes a static assets to Amazon S3 and Amazon CloudFront (\*hosting category is required).                                                                                                  |
 | amplify status [ `<category>`...]                                      | Displays the state of local resources that haven't been pushed to the cloud (Create/Update/Delete).                                                                                                                  |
-| amplify status -v [ `<category>`...]                                   | Verbose mode - Shows the detailed verbose diff between local and deployed resources, including cloudformation-diff | 
+| amplify status -v [ `<category>`...]                                   | Verbose mode - Shows the detailed verbose diff between local and deployed resources, including cloudformation-diff                                                                                                   |
 | amplify serve                                                          | Runs `amplify push`, and then executes the project's start command to test run the client-side application.                                                                                                          |
 | amplify delete                                                         | Deletes resources tied to the project.                                                                                                                                                                               |
 | amplify help \| amplify `<category>` help                              | Displays help for the core CLI.                                                                                                                                                                                      |
@@ -92,7 +91,7 @@ The Amplify CLI supports the commands shown in the following table.
 
 ## Developing
 
-To set up your local development environment, go to [Local Environment Setup](https://github.com/aws-amplify/amplify-cli/blob/master/CONTRIBUTING.md#local-environment-setup).
+To set up your local development environment, go to [Local Environment Setup](https://github.com/aws-amplify/amplify-cli/blob/dev/CONTRIBUTING.md#local-environment-setup).
 
 To test your category, do the following:
 
@@ -110,4 +109,4 @@ Before pushing code or sending a pull request, do the following:
 
 ## Contributing
 
-We are thankful for any contributions from the community. Look at our [Contribution Guidelines](https://github.com/aws-amplify/amplify-cli/blob/master/CONTRIBUTING.md).
+We are thankful for any contributions from the community. Look at our [Contribution Guidelines](https://github.com/aws-amplify/amplify-cli/blob/dev/CONTRIBUTING.md).

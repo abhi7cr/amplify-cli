@@ -9,7 +9,7 @@ import {
   CategoryInputState,
   FeatureFlags,
   $TSContext,
-} from 'amplify-cli-core';
+} from '@aws-amplify/amplify-cli-core';
 import { CognitoCLIInputs } from '../service-walkthrough-types/awsCognito-user-input-types';
 import { CognitoStackOptions } from '../service-walkthrough-types/cognito-user-input-types';
 import _ from 'lodash';
@@ -21,7 +21,7 @@ export class AuthInputState extends CategoryInputState {
   #service: string; //AWS service for the resource
   #buildFilePath: string;
 
-  constructor(resourceName: string) {
+  constructor(private readonly context: $TSContext, resourceName: string) {
     super(resourceName);
     this.#category = AmplifyCategories.AUTH;
     this.#service = AmplifySupportedService.COGNITO;
@@ -33,7 +33,7 @@ export class AuthInputState extends CategoryInputState {
   }
 
   public async isCLIInputsValid(cliInputs: CognitoCLIInputs = this.getCLIInputPayload()): Promise<boolean> {
-    const schemaValidator = new CLIInputSchemaValidator(this.#service, this.#category, 'CognitoCLIInputs');
+    const schemaValidator = new CLIInputSchemaValidator(this.context, this.#service, this.#category, 'CognitoCLIInputs');
     return schemaValidator.validateInput(JSON.stringify(cliInputs));
   }
 
@@ -92,7 +92,7 @@ export class AuthInputState extends CategoryInputState {
         dependsOn = parameters.dependsOn;
       } else {
         // generate dependsOn from cli-inputs
-        const dependsOnKeys = Object.keys(parameters.triggers).map(i => `${parameters.resourceName}${i}`);
+        const dependsOnKeys = Object.keys(parameters.triggers).map((i) => `${parameters.resourceName}${i}`);
         dependsOn = context.amplify.dependsOnBlock(context, dependsOnKeys, 'Cognito');
       }
       parameters = Object.assign(parameters, {

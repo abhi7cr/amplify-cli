@@ -2,11 +2,14 @@
 /* eslint-disable func-style */
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 /* eslint-disable @typescript-eslint/no-var-requires */
-/* eslint-disable jsdoc/require-jsdoc */
 const path = require('path');
+const Module = require('module');
 const fs = require('fs-extra');
 const graphQLConfig = require('graphql-config');
+const babel = require('@babel/core');
+const babelTransformEsmToCjs = require('@babel/plugin-transform-modules-commonjs').default;
 const constants = require('./constants');
+const _ = require('lodash');
 
 const MOCK_RESERVED_EXPORT_KEYS = [
   'aws_user_files_s3_dangerously_connect_to_http_endpoint_for_testing',
@@ -47,6 +50,7 @@ const AMPLIFY_RESERVED_EXPORT_KEYS = [
   // Pinpoint
   'aws_mobile_analytics_app_id',
   'aws_mobile_analytics_app_region',
+  'Notifications',
 
   // DynamoDB
   'aws_dynamodb_all_tables_region',
@@ -60,9 +64,6 @@ const AMPLIFY_RESERVED_EXPORT_KEYS = [
   // lex
   'aws_bots',
   'aws_bots_config',
-
-  // Sumerian
-  'XR',
 
   // Predictions
   'predictions',
@@ -85,19 +86,23 @@ const fileNames = ['queries', 'mutations', 'subscriptions'];
 
 function deleteAmplifyConfig(context) {
   const { srcDirPath, projectPath } = getSrcDir(context);
-  // delete aws-exports
+  // delete aws-exports.js & amplifyConfiguration.json
   if (fs.existsSync(srcDirPath)) {
-    const targetFilePath = path.join(srcDirPath, constants.exportsFilename);
-    fs.removeSync(targetFilePath);
+    [constants.exportsJSFilename, constants.exportsJSONFilename].forEach((filename) => {
+      const filepath = path.join(srcDirPath, filename);
+      if (fs.existsSync(filepath)) {
+        fs.removeSync(filepath);
+      }
+    });
   }
   // eslint-disable-next-line spellcheck/spell-checker
   if (!fs.existsSync(path.join(projectPath, '.graphqlconfig.yml'))) return;
   const gqlConfig = graphQLConfig.getGraphQLConfig(projectPath);
   if (gqlConfig && gqlConfig.config) {
     const { projects } = gqlConfig.config;
-    Object.keys(projects).forEach(project => {
+    Object.keys(projects).forEach((project) => {
       const { codeGenTarget, docsFilePath } = projects[project].extensions.amplify;
-      fileNames.forEach(filename => {
+      fileNames.forEach((filename) => {
         const file = path.join(projectPath, docsFilePath, `${filename}.${FILE_EXTENSION_MAP[codeGenTarget] || 'graphql'}`);
         if (fs.existsSync(file)) fs.removeSync(file);
       });
@@ -143,7 +148,7 @@ function createAmplifyConfig(context, amplifyResources) {
 
 async function createAWSExports(context, amplifyResources, cloudAmplifyResources) {
   const newAWSExports = await getAWSExports(context, amplifyResources, cloudAmplifyResources);
-  generateAWSExportsFile(context, newAWSExports);
+  await generateAWSExportsFile(context, newAWSExports);
   return context;
 }
 
@@ -151,7 +156,6 @@ async function getAWSExports(context, amplifyResources, cloudAmplifyResources) {
   const newAWSExports = getAWSExportsObject(amplifyResources);
   const cloudAWSExports = getAWSExportsObject(cloudAmplifyResources);
   const currentAWSExports = await getCurrentAWSExports(context);
-
   const customConfigs = getCustomConfigs(cloudAWSExports, currentAWSExports);
 
   Object.assign(newAWSExports, customConfigs);
@@ -162,8 +166,8 @@ function getCustomConfigs(cloudAWSExports, currentAWSExports) {
   const customConfigs = {};
   if (currentAWSExports) {
     Object.keys(currentAWSExports)
-      .filter(key => !CUSTOM_CONFIG_DENY_LIST.includes(key))
-      .forEach(key => {
+      .filter((key) => !CUSTOM_CONFIG_DENY_LIST.includes(key))
+      .forEach((key) => {
         if (!cloudAWSExports[key]) {
           customConfigs[key] = currentAWSExports[key];
         }
@@ -181,7 +185,7 @@ function getAWSExportsObject(resources) {
   const projectRegion = resources.metadata.Region;
   configOutput.aws_project_region = projectRegion;
 
-  Object.keys(serviceResourceMapping).forEach(service => {
+  Object.keys(serviceResourceMapping).forEach((service) => {
     switch (service) {
       case 'Cognito':
         Object.assign(configOutput, getCognitoConfig(serviceResourceMapping[service], projectRegion));
@@ -207,9 +211,6 @@ function getAWSExportsObject(resources) {
         break;
       case 'Lex':
         Object.assign(configOutput, getLexConfig(serviceResourceMapping[service], projectRegion));
-        break;
-      case 'Sumerian':
-        Object.assign(configOutput, getSumerianConfig(serviceResourceMapping[service], projectRegion));
         break;
       // predictions config generation
       case 'Translate':
@@ -274,29 +275,36 @@ function getAWSExportsObject(resources) {
 }
 
 async function getCurrentAWSExports(context) {
-  const { amplify } = context;
-  const projectPath = context.exeInfo ? context.exeInfo.localEnvInfo.projectPath : amplify.getEnvInfo().projectPath;
-  const projectConfig = context.exeInfo ? context.exeInfo.projectConfig[constants.Label] : amplify.getProjectConfig()[constants.Label];
-  const frontendConfig = projectConfig.config;
+  const { amplify, exeInfo } = context;
+  const projectPath = exeInfo?.localEnvInfo?.projectPath || amplify.getEnvInfo().projectPath;
+  const { config: frontendConfig } = exeInfo?.projectConfig?.[constants.Label] || amplify.getProjectConfig()[constants.Label];
   const srcDirPath = path.join(projectPath, frontendConfig.SourceDir);
-
-  const targetFilePath = path.join(srcDirPath, constants.exportsFilename);
+  const targetFilePath = path.join(srcDirPath, constants.exportsJSFilename);
   let awsExports = {};
 
   if (fs.existsSync(targetFilePath)) {
-    // if packaged, we can't load an ES6 module because pkg doesn't support it yet
-    // eslint-disable-next-line spellcheck/spell-checker
-    const es5export = 'module.exports = {default: awsmobile};\n';
-    // eslint-disable-next-line spellcheck/spell-checker
-    const es6export = 'export default awsmobile;\n';
-
     const fileContents = fs.readFileSync(targetFilePath, 'utf-8');
-    fs.writeFileSync(targetFilePath, fileContents.replace(es6export, es5export));
-    // eslint-disable-next-line global-require, import/no-dynamic-require
-    awsExports = require(targetFilePath).default;
-    fs.writeFileSync(targetFilePath, fileContents);
+    try {
+      // transpile the file contents to CommonJS
+      const { code } = babel.transformSync(fileContents, {
+        plugins: [babelTransformEsmToCjs],
+        configFile: false,
+        babelrc: false,
+      });
+      const mod = new Module();
+      mod._compile(code, 'aws-exports.js');
+      // add paths to the module to account for node_module imports in aws-exports.js (should there be any)
+      mod.paths = [projectPath];
+      // the transpiled result will contain `exports.default`
+      awsExports = mod.exports?.default || mod.exports;
+    } catch (error) {
+      throw new Error('Unable to parse aws-exports.js. Has this file been modified?');
+    }
   }
 
+  if (!awsExports) {
+    throw new Error('Unable to find aws-exports.js. Has this file been modified?');
+  }
   return awsExports;
 }
 
@@ -309,8 +317,11 @@ async function generateAWSExportsFile(context, configOutput) {
 
   fs.ensureDirSync(srcDirPath);
 
-  const targetFilePath = path.join(srcDirPath, constants.exportsFilename);
-  await generateAwsExportsAtPath(context, targetFilePath, configOutput);
+  const pathToAwsExportsJS = path.join(srcDirPath, constants.exportsJSFilename);
+  const pathToAmplifyConfigurationJSON = path.join(srcDirPath, constants.exportsJSONFilename);
+
+  context.amplify.writeObjectAsJson(pathToAmplifyConfigurationJSON, configOutput, true);
+  await generateAwsExportsAtPath(context, pathToAwsExportsJS, configOutput);
 }
 
 async function generateAwsExportsAtPath(context, targetFilePath, configOutput) {
@@ -370,10 +381,10 @@ function getCognitoConfig(cognitoResources, projectRegion) {
   };
 
   if (
-    cognitoResource.output.GoogleWebClient
-    || cognitoResource.output.FacebookWebClient
-    || cognitoResource.output.AmazonWebClient
-    || cognitoResource.output.AppleWebClient
+    cognitoResource.output.GoogleWebClient ||
+    cognitoResource.output.FacebookWebClient ||
+    cognitoResource.output.AmazonWebClient ||
+    cognitoResource.output.AppleWebClient
   ) {
     idpFederation = true;
   }
@@ -513,7 +524,7 @@ function getIdentifyConfig(identifyResources) {
   const baseConfig = {
     proxy: false,
   };
-  identifyResources.forEach(identifyResource => {
+  identifyResources.forEach((identifyResource) => {
     if (identifyResource.identifyType === 'identifyText') {
       resultConfig.identifyText = {
         ...baseConfig,
@@ -572,14 +583,50 @@ function getInferConfig(inferResources) {
 }
 
 function getPinpointConfig(pinpointResources) {
-  // There can only be one analytics resource
-
-  const pinpointResource = pinpointResources[0];
-
-  return {
-    aws_mobile_analytics_app_id: pinpointResource.output.Id,
-    aws_mobile_analytics_app_region: pinpointResource.output.Region,
+  const channelMapping = {
+    APNS: 'Push',
+    FCM: 'Push',
+    InAppMessaging: 'InAppMessaging',
+    Email: 'Email',
+    SMS: 'SMS',
   };
+
+  const pinpointConfig = {};
+
+  const pinpointAnalytics = pinpointResources.filter(
+    (it) => _.intersection(Object.keys(it.output), Object.keys(channelMapping)).length === 0,
+  );
+  const pinpointNotifications = pinpointResources.filter(
+    (it) => _.intersection(Object.keys(it.output), Object.keys(channelMapping)).length !== 0,
+  );
+
+  if (pinpointAnalytics.length !== 0) {
+    // legacy
+    pinpointConfig.aws_mobile_analytics_app_id = pinpointConfig.aws_mobile_analytics_app_id || pinpointAnalytics[0].output.Id;
+    pinpointConfig.aws_mobile_analytics_app_region = pinpointConfig.aws_mobile_analytics_app_region || pinpointAnalytics[0].output.Region;
+
+    pinpointConfig.Analytics = {
+      AWSPinpoint: {
+        appId: pinpointConfig.aws_mobile_analytics_app_id,
+        region: pinpointConfig.aws_mobile_analytics_app_region,
+      },
+    };
+  }
+
+  for (const [channel, plugin] of Object.entries(channelMapping)) {
+    const notificationPinpoint = pinpointNotifications.find((it) => it.output?.[channel]?.Enabled);
+    if (notificationPinpoint) {
+      pinpointConfig.Notifications = pinpointConfig.Notifications ?? {};
+      pinpointConfig.Notifications[plugin] = {
+        AWSPinpoint: {
+          appId: notificationPinpoint.output[channel].ApplicationId,
+          region: notificationPinpoint.output.Region,
+        },
+      };
+    }
+  }
+
+  return pinpointConfig;
 }
 
 function getDynamoDBConfig(dynamoDBResources, projectRegion) {
@@ -611,7 +658,7 @@ function getS3AndCloudFrontConfig(s3AndCloudfrontResources) {
 }
 
 function getLexConfig(lexResources) {
-  const config = lexResources.map(r => ({
+  const config = lexResources.map((r) => ({
     name: r.output.BotName,
     alias: '$LATEST',
     region: r.output.Region,
@@ -623,29 +670,12 @@ function getLexConfig(lexResources) {
   };
 }
 
-function getSumerianConfig(sumerianResources) {
-  const scenes = {};
-  sumerianResources.forEach(r => {
-    const { resourceName, output } = r;
-    delete output.service;
-
-    scenes[resourceName] = {
-      sceneConfig: output,
-    };
-  });
-  return {
-    XR: {
-      scenes,
-    },
-  };
-}
-
 function getMapConfig(mapResources) {
   let defaultMap = '';
   const mapConfig = {
     items: {},
   };
-  mapResources.forEach(mapResource => {
+  mapResources.forEach((mapResource) => {
     const mapName = mapResource.output.Name;
     mapConfig.items[mapName] = {
       style: mapResource.output.Style,
@@ -663,7 +693,7 @@ function getPlaceIndexConfig(placeIndexResources) {
   const placeIndexConfig = {
     items: [],
   };
-  placeIndexResources.forEach(placeIndexResource => {
+  placeIndexResources.forEach((placeIndexResource) => {
     const placeIndexName = placeIndexResource.output.Name;
     placeIndexConfig.items.push(placeIndexName);
     if (placeIndexResource.isDefault) {
@@ -679,7 +709,7 @@ function getGeofenceCollectionConfig(geofenceCollectionResources) {
   const geofenceCollectionConfig = {
     items: [],
   };
-  geofenceCollectionResources.forEach(geofenceCollectionResource => {
+  geofenceCollectionResources.forEach((geofenceCollectionResource) => {
     const geofenceCollectionName = geofenceCollectionResource.output.Name;
     geofenceCollectionConfig.items.push(geofenceCollectionName);
     if (geofenceCollectionResource.isDefault) {
@@ -691,5 +721,11 @@ function getGeofenceCollectionConfig(geofenceCollectionResources) {
 }
 
 module.exports = {
-  createAWSExports, getAWSExports, createAmplifyConfig, deleteAmplifyConfig, generateAwsExportsAtPath, getAWSExportsObject,
+  createAWSExports,
+  getAWSExports,
+  getCurrentAWSExports,
+  createAmplifyConfig,
+  deleteAmplifyConfig,
+  generateAwsExportsAtPath,
+  getAWSExportsObject,
 };

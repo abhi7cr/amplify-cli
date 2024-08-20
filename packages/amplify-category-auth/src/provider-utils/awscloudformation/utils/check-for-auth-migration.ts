@@ -1,5 +1,5 @@
-import { $TSContext, AmplifyCategories, getMigrateResourceMessageForOverride } from 'amplify-cli-core';
-import { printer, prompter } from 'amplify-prompts';
+import { $TSContext, AmplifyCategories, getMigrateResourceMessageForOverride } from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import { AuthInputState } from '../auth-inputs-manager/auth-input-state';
 import { generateAuthStackTemplate } from './generate-auth-stack-template';
 import { migrateResourceToSupportOverride } from './migrate-override-resource';
@@ -11,7 +11,7 @@ export const checkAuthResourceMigration = async (context: $TSContext, authName: 
   // check if its imported auth
   const { imported } = context.amplify.getImportedAuthProperties(context);
   if (!imported) {
-    const cliState = new AuthInputState(authName);
+    const cliState = new AuthInputState(context, authName);
     if (!cliState.cliInputFileExists()) {
       printer.debug("cli-inputs.json doesn't exist");
       // put spinner here

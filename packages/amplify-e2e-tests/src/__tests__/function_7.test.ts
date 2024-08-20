@@ -5,8 +5,8 @@ import {
   createNewProjectDir,
   deleteProject,
   deleteProjectDir,
+  generateRandomShortId,
   getCategoryParameters,
-  getParameters,
   getProjectMeta,
   getSSMParameters,
   initJSProjectWithProfile,
@@ -15,8 +15,8 @@ import {
   removeFunction,
   setCategoryParameters,
   updateFunction,
-} from 'amplify-e2e-core';
-import { addEnvironment, addEnvironmentYes, removeEnvironment } from '../environment/env';
+} from '@aws-amplify/amplify-e2e-core';
+import { addEnvironmentYes, checkoutEnvironment, removeEnvironment } from '../environment/env';
 
 describe('function secret value', () => {
   let projRoot: string;
@@ -33,8 +33,7 @@ describe('function secret value', () => {
   it('configures secret that is accessible in the cloud', async () => {
     // add func with secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -69,8 +68,7 @@ describe('function secret value', () => {
   it('removes secrets immediately when func not pushed', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -107,8 +105,7 @@ describe('function secret value', () => {
   it('removes secrets immediately when unpushed function is removed from project', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -135,8 +132,7 @@ describe('function secret value', () => {
   it('removes secrets on push when func is already pushed', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -180,8 +176,7 @@ describe('function secret value', () => {
   it('removes secrets on push when pushed function is removed', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -216,8 +211,7 @@ describe('function secret value', () => {
   it('removes / copies secrets when env removed / added, respectively', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -250,8 +244,7 @@ describe('function secret value', () => {
   it('prompts for missing secrets and removes unused secrets on push', async () => {
     // add func w/ secret
     await initJSProjectWithProfile(projRoot, { disableAmplifyAppCreation: false });
-    const random = Math.floor(Math.random() * 10000);
-    const funcName = `secretsTest${random}`;
+    const funcName = `secretsTest${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -286,6 +279,60 @@ describe('function secret value', () => {
     // check that old value is removed and new one is added
     await expectParams([{ name: 'A_NEW_SECRET', value: 'anewtestsecretvalue' }], ['TEST_SECRET'], region, appId, 'integtest', funcName);
   });
+
+  it('keeps old secrets when pushing secrets added in another env', async () => {
+    // add func w/ secret
+    const envName = 'enva';
+    await initJSProjectWithProfile(projRoot, { envName, disableAmplifyAppCreation: false });
+    const funcName = `secretsTest${generateRandomShortId()}`;
+    const funcSecretName = 'TEST_SECRET';
+    await addFunction(
+      projRoot,
+      {
+        functionTemplate: 'Hello World',
+        name: funcName,
+        secretsConfig: {
+          operation: 'add',
+          name: funcSecretName,
+          value: 'testsecretvalue',
+        },
+      },
+      'nodejs',
+    );
+
+    await amplifyPushAuth(projRoot);
+
+    // add new env and add new secret to func
+    await addEnvironmentYes(projRoot, { envName: 'envb' });
+    await amplifyPushAuth(projRoot);
+    const newFuncSecretName = 'NEW_TEST_SECRET';
+    await updateFunction(
+      projRoot,
+      {
+        secretsConfig: {
+          operation: 'add',
+          name: newFuncSecretName,
+          value: 'testsecretvalue',
+        },
+      },
+      'nodejs',
+    );
+
+    // push updated func w/ new secret
+    await amplifyPushAuth(projRoot);
+
+    await checkoutEnvironment(projRoot, { envName });
+
+    // check contents of function-parameters.json for new secret
+    const expectedFuncSecrets = [funcSecretName, newFuncSecretName];
+    const funcParams = getCategoryParameters(projRoot, 'function', funcName);
+    expect(funcParams.secretNames).toEqual(expectedFuncSecrets);
+
+    // push with original env and assert all secrets are in function-parameters.json
+    await amplifyPushMissingFuncSecret(projRoot, 'anewtestsecretvalue');
+    const funcParamsPostPush = getCategoryParameters(projRoot, 'function', funcName);
+    expect(funcParamsPostPush.secretNames).toEqual(expectedFuncSecrets);
+  });
 });
 
 const expectParams = async (
@@ -296,7 +343,7 @@ const expectParams = async (
   envName: string,
   funcName: string,
 ) => {
-  const result = await getSSMParameters(region, appId, envName, funcName, expectToExist.map(exist => exist.name).concat(expectNotExist));
+  const result = await getSSMParameters(region, appId, envName, funcName, expectToExist.map((exist) => exist.name).concat(expectNotExist));
 
   const mapName = (name: string) => `/amplify/${appId}/${envName}/AMPLIFY_${funcName}_${name}`;
 
@@ -304,9 +351,9 @@ const expectParams = async (
   expect(result.InvalidParameters.sort()).toEqual(expectNotExist.map(mapName).sort());
 
   expect(result.Parameters.length).toBe(expectToExist.length);
-  const mappedResult = result.Parameters.map(param => ({ name: param.Name, value: param.Value })).sort(sortByName);
+  const mappedResult = result.Parameters.map((param) => ({ name: param.Name, value: param.Value })).sort(sortByName);
   const mappedExpect = expectToExist
-    .map(exist => ({ name: `/amplify/${appId}/${envName}/AMPLIFY_${funcName}_${exist.name}`, value: exist.value }))
+    .map((exist) => ({ name: `/amplify/${appId}/${envName}/AMPLIFY_${funcName}_${exist.name}`, value: exist.value }))
     .sort(sortByName);
   expect(mappedResult).toEqual(mappedExpect);
 };

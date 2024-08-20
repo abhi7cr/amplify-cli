@@ -1,5 +1,5 @@
-import { $TSAny, $TSContext } from 'amplify-cli-core';
-import { IIdentityPoolService } from 'amplify-util-import';
+import { $TSAny, $TSContext, AmplifyFault, AmplifyError, parseArn } from '@aws-amplify/amplify-cli-core';
+import { IIdentityPoolService } from '@aws-amplify/amplify-util-import';
 import { CognitoIdentity } from 'aws-sdk';
 import { PaginationKey, IdentityPool, IdentityPoolShortDescription, ListIdentityPoolsResponse } from 'aws-sdk/clients/cognitoidentity';
 import { loadConfiguration } from '../configuration-manager';
@@ -28,19 +28,18 @@ export class IdentityPoolService implements IIdentityPoolService {
   public async listIdentityPools(): Promise<IdentityPoolShortDescription[]> {
     if (this.cachedIdentityPoolIds.length === 0) {
       const result = await pagedAWSCall<ListIdentityPoolsResponse, IdentityPoolShortDescription, PaginationKey>(
-        async (params: CognitoIdentity.Types.ListIdentitiesInput, nextToken: PaginationKey) => {
-          return await this.cognitoIdentity
+        async (params: CognitoIdentity.Types.ListIdentitiesInput, nextToken: PaginationKey) =>
+          await this.cognitoIdentity
             .listIdentityPools({
               ...params,
               NextToken: nextToken,
             })
-            .promise();
-        },
+            .promise(),
         {
           MaxResults: 60,
         },
-        response => response?.IdentityPools,
-        async response => response?.NextToken,
+        (response) => response?.IdentityPools,
+        async (response) => response?.NextToken,
       );
 
       this.cachedIdentityPoolIds.push(...result);
@@ -56,7 +55,7 @@ export class IdentityPoolService implements IIdentityPoolService {
       const identityPoolDetails = [];
 
       if (identityPools.length > 0) {
-        const describeIdentityPoolPromises = identityPools.map(idp =>
+        const describeIdentityPoolPromises = identityPools.map((idp) =>
           this.cognitoIdentity
             .describeIdentityPool({
               IdentityPoolId: idp.IdentityPoolId,
@@ -84,15 +83,17 @@ export class IdentityPoolService implements IIdentityPoolService {
       })
       .promise();
 
-    if (!response.Roles || !response.Roles['authenticated'] || !response.Roles['unauthenticated']) {
-      throw new Error(`Cannot import Identity Pool without roles.`);
+    if (!response.Roles || !response.Roles.authenticated || !response.Roles.unauthenticated) {
+      throw new AmplifyError('AuthImportError', {
+        message: `Cannot import Identity Pool without 'authenticated' and 'unauthenticated' roles.`,
+      });
     }
 
     return {
-      authRoleArn: response.Roles['authenticated'],
-      authRoleName: this.getResourceNameFromArn(response.Roles['authenticated']),
-      unauthRoleArn: response.Roles['unauthenticated'],
-      unauthRoleName: this.getResourceNameFromArn(response.Roles['unauthenticated']),
+      authRoleArn: response.Roles.authenticated,
+      authRoleName: this.getResourceNameFromArn(response.Roles.authenticated),
+      unauthRoleArn: response.Roles.unauthenticated,
+      unauthRoleName: this.getResourceNameFromArn(response.Roles.unauthenticated),
     };
   }
 
@@ -100,16 +101,18 @@ export class IdentityPoolService implements IIdentityPoolService {
     let resourceName;
 
     if (arn) {
-      const parts = arn.split('/');
-
-      if (parts.length === 2) {
-        resourceName = parts[1];
+      const fullRoleName = parseArn(arn).resource;
+      const parts = fullRoleName.split('/');
+      if (parts.length >= 2) {
+        resourceName = [...parts].pop();
       }
     }
 
     // Should not happen anytime
     if (!resourceName) {
-      throw new Error(`Cannot parse arn: '${arn}'.`);
+      throw new AmplifyFault('UnknownFault', {
+        message: `Cannot parse arn: '${arn}'.`,
+      });
     }
 
     return resourceName;

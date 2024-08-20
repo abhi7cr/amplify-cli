@@ -1,24 +1,80 @@
-import { $TSContext } from 'amplify-cli-core';
+import { AmplifyCategories, AmplifySupportedService, stateManager } from '@aws-amplify/amplify-cli-core';
+import aws from 'aws-sdk';
 import {
-  generateUiBuilderComponents,
   getEnvName,
   getAppId,
-  listUiBuilderComponents,
-  listUiBuilderThemes,
   resolveAppId,
-  generateUiBuilderThemes,
-} from '../commands/utils/syncAmplifyUiBuilderComponents';
-import { getAmplifyUIBuilderService } from '../commands/utils/amplifyUiBuilderService'
-import aws from 'aws-sdk';
-import * as CLICore from 'amplify-cli-core';
-import * as createUiBuilderComponentDependency from '../commands/utils/createUiBuilderComponent';
-const aws_mock = aws as any;
-const createUiBuilderComponentDependency_mock = createUiBuilderComponentDependency as any;
+  mapGenericDataSchemaToCodegen,
+  waitForSucceededJob,
+  extractUIComponents,
+  fetchWithRetries,
+} from '../commands/utils';
+import { AmplifyStudioClient } from '../clients';
+import { isDataStoreEnabled } from '@aws-amplify/amplify-category-api';
+import type { GenericDataSchema } from '@aws-amplify/codegen-ui';
+import fetch, { Response } from 'node-fetch';
+import { existsSync, writeFileSync } from 'fs';
+
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
+  ...jest.requireActual('@aws-amplify/amplify-cli-core'),
+  FeatureFlags: {
+    getBoolean: () => false,
+    getNumber: () => 0,
+  },
+}));
+jest.mock('../commands/utils/featureFlags', () => ({
+  getTransformerVersion: jest.fn().mockReturnValue(2),
+}));
+jest.mock('@aws-amplify/amplify-category-api', () => ({
+  isDataStoreEnabled: jest.fn(),
+}));
+jest.mock('fs');
+jest.mock('node-fetch');
+
+const awsMock = aws as any;
+const stateManagerMock = stateManager as any;
+const isDataStoreEnabledMocked = jest.mocked(isDataStoreEnabled);
+const mockWriteFileSync = jest.mocked(writeFileSync);
+const mockExistsSync = jest.mocked(existsSync);
+const mockNodeFetch = jest.mocked(fetch);
+
 describe('should sync amplify ui builder components', () => {
-  let context: $TSContext | any;
+  let context: any;
+  const env = process.env;
+
+  const mockGenericDataSchema: GenericDataSchema = {
+    dataSourceType: 'DataStore',
+    models: {
+      Blog: {
+        fields: {
+          id: { dataType: 'ID', required: true, readOnly: false, isArray: false },
+        },
+        primaryKeys: ['id'],
+      },
+    },
+    enums: {
+      Status: { values: ['ENABLED', 'DISABLED', 'HIDDEN'] },
+    },
+    nonModels: {
+      Metadata: {
+        fields: {
+          name: {
+            dataType: 'String',
+            required: false,
+            readOnly: false,
+            isArray: false,
+          },
+        },
+      },
+    },
+  };
+
   beforeEach(() => {
-    CLICore.FeatureFlags.getBoolean = () => false;
-    CLICore.FeatureFlags.getNumber = () => 0;
+    mockNodeFetch.mockReset();
+    process.env = { ...env };
+
+    isDataStoreEnabledMocked.mockResolvedValue(true);
+    mockExistsSync.mockReturnValue(false);
     context = {
       exeInfo: {
         projectConfig: {
@@ -43,17 +99,28 @@ describe('should sync amplify ui builder components', () => {
       },
     };
 
-    aws_mock.AmplifyUIBuilder = jest.fn(() => ({
+    stateManagerMock.getMeta = jest.fn(() => ({
+      [AmplifyCategories.API]: {
+        MyResourceName: {
+          service: AmplifySupportedService.APPSYNC,
+        },
+      },
+      providers: {
+        awscloudformation: { AmplifyAppId: 'testAppId' },
+      },
+    }));
+
+    awsMock.AmplifyUIBuilder = jest.fn(() => ({
       exportComponents: jest.fn(() => ({
         promise: jest.fn(() => ({
           entities: [
             {
-              appId: 'd37nrm8rzt3oek',
+              appId: 'd37nrm8rzt3oek', // eslint-disable-line spellcheck/spell-checker
               bindingProperties: {},
               componentType: 'Box',
               environmentName: 'staging',
-              id: 's-s4mU579Ycf6JGHwhqT',
-              name: 'aawwdd',
+              id: 's-s4mU579Ycf6JGHwhqT', // eslint-disable-line spellcheck/spell-checker
+              name: 'aawwdd', // eslint-disable-line spellcheck/spell-checker
               overrides: {},
               properties: {},
               variants: [],
@@ -66,85 +133,177 @@ describe('should sync amplify ui builder components', () => {
           entities: [{}],
         })),
       })),
+      exportForms: jest.fn(() => ({
+        promise: jest.fn(() => ({
+          entities: [
+            {
+              name: 'BasicFormCreate',
+              formActionType: 'create',
+              dataType: {
+                dataSourceType: 'Custom',
+                dataTypeName: 'Post',
+              },
+              fields: {
+                name: {
+                  inputType: {
+                    required: true,
+                    type: 'TextField',
+                    name: 'name',
+                    defaultValue: 'John Doe',
+                  },
+                  label: 'name',
+                },
+              },
+              sectionalElements: {},
+              style: {},
+            },
+          ],
+        })),
+      })),
+      exportViews: jest.fn(() => ({
+        promise: jest.fn(() => ({
+          entities: [
+            {
+              appId: '23342',
+              dataSource: { type: 'Custom' },
+              environmentName: 'staging',
+              id: 'id',
+              name: 'ProductTable',
+              // TODO: replace with export when Codegen updated
+              schemaVersion: '1.0',
+              style: {},
+              viewConfiguration: {
+                type: 'Table',
+              },
+            },
+          ],
+        })),
+      })),
+      getMetadata: jest.fn(() => ({
+        promise: jest.fn(() => ({
+          features: {
+            autoGenerateForms: 'true',
+            autoGenerateViews: 'true',
+            formFeatureFlags: {
+              isRelationshipSupported: 'false',
+              isNonModelSupported: 'false',
+            },
+          },
+        })),
+      })),
     }));
-
-    createUiBuilderComponentDependency_mock.createUiBuilderComponent = jest.fn();
-    createUiBuilderComponentDependency_mock.createUiBuilderTheme = jest.fn();
   });
 
-  it('pulls components from aws-sdk and passes them to createUiBuilderComponent', () => {
-    generateUiBuilderComponents(context, []);
-  });
-
-  it('does not throw an error when createUiBuilderComponent fails', () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderComponent = jest.fn(() => {
-      throw new Error('ahhh!');
-    });
-    expect(async () => generateUiBuilderComponents(context, [])).not.toThrow();
-  });
-
-  it('does not throw an error when createUiBuilderThemes fails', () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderComponent = jest.fn(() => {
-      throw new Error('ahhh!');
-    });
-    expect(async () => generateUiBuilderThemes(context, [])).not.toThrow();
+  afterEach(() => {
+    process.env = env;
   });
 
   it('can getAmplifyUIBuilderService', async () => {
     process.env.UI_BUILDER_ENDPOINT = 'https://mock-endpoint.com';
     process.env.UI_BUILDER_REGION = 'mock-region';
-    const service = await getAmplifyUIBuilderService(context, 'testEnv', 'testAppId');
-    expect(Object.keys(service)).toContain('exportComponents');
-    expect(Object.keys(service)).toContain('exportThemes');
+    const client = await AmplifyStudioClient.setClientInfo(context);
+    expect(Object.keys(client)).toEqual(
+      expect.arrayContaining(['listComponents', 'listThemes', 'listForms', 'getModels', 'loadMetadata', 'createComponent']),
+    );
+    expect(client.metadata).toEqual(
+      expect.objectContaining({
+        autoGenerateForms: true,
+        autoGenerateViews: true,
+        formFeatureFlags: {
+          isRelationshipSupported: false,
+          isNonModelSupported: false,
+        },
+      }),
+    );
   });
-  it('can listUiBuilderThemes', async () => {
-    const themes = await listUiBuilderThemes(context, 'testEnv');
-    expect(themes.entities).toHaveLength(1);
-  });
-  it('can listUiBuilderComponents', async () => {
-    const components = await listUiBuilderComponents(context, 'testEnv');
+
+  it('can list components', async () => {
+    const client = await AmplifyStudioClient.setClientInfo(context);
+    const components = await client.listComponents();
     expect(components.entities).toHaveLength(1);
   });
+
+  it('can list themes', async () => {
+    const client = await AmplifyStudioClient.setClientInfo(context);
+    const themes = await client.listThemes();
+    expect(themes.entities).toHaveLength(1);
+  });
+
+  it('can list forms', async () => {
+    const client = await AmplifyStudioClient.setClientInfo(context);
+    const forms = await client.listForms();
+    expect(forms.entities).toHaveLength(1);
+  });
+
   it('can getAppId', async () => {
-    const appId = await getAppId(context);
+    const appId = getAppId(context);
     expect(appId).toBe('testAppId');
   });
+
   it('can getEnvName', () => {
     const envName = getEnvName(context);
     expect(envName).toBe('testEnvName');
   });
+
   it('can resolveAppId', async () => {
-    context.amplify.invokePluginMethod = () => 'testAppId';
-    const appId = await resolveAppId(context);
+    const appId = resolveAppId();
     expect(appId).toBe('testAppId');
   });
+
   it('can throw on getAppId', async () => {
     context.input.options.appId = null;
     context.amplify.invokePluginMethod = () => null;
-    expect(async () => await getAppId(context)).rejects.toThrowError();
+    stateManagerMock.getMeta = () => ({});
+    expect(() => getAppId(context)).toThrowError();
   });
-  it('can generate ui builder components', async () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderComponent = jest.fn().mockImplementation(() => ({}));
-    const components = generateUiBuilderComponents(context, [{}, {}]);
-    expect(components.every(component => component.resultType === 'SUCCESS')).toBeTruthy();
+
+  it('can map generic data schema to start codegen job request', () => {
+    expect(mapGenericDataSchemaToCodegen(mockGenericDataSchema)).toMatchSnapshot();
   });
-  it('can handle failed generation generate ui builder components', async () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderComponent = jest.fn().mockImplementation(() => {
-      throw new Error('ahh!');
-    });
-    const components = generateUiBuilderComponents(context, [{}, {}]);
-    expect(components.every(component => component.resultType === 'FAILURE')).toBeTruthy();
+
+  it('can wait for a succeeded job', async () => {
+    const succeededJob = { status: 'succeeded' };
+    const getJob = jest.fn().mockResolvedValueOnce({ status: 'in_progress' }).mockResolvedValueOnce(succeededJob);
+    const job = await waitForSucceededJob(getJob, { pollInterval: 1 });
+    expect(job).toEqual(succeededJob);
   });
-  it('can generate ui builder themes', async () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderTheme = jest.fn().mockImplementation(() => ({}));
-    const themes = generateUiBuilderThemes(context, [{}, {}]);
-    expect(themes.every(theme => theme.resultType === 'SUCCESS')).toBeTruthy();
+
+  it('can throw if job failed', async () => {
+    const statusMessage = 'failed status';
+    const getJob = jest.fn().mockResolvedValueOnce({ status: 'in_progress' }).mockResolvedValueOnce({ status: 'failed', statusMessage });
+    await expect(waitForSucceededJob(getJob, { pollInterval: 2 })).rejects.toThrow(statusMessage);
   });
-  it('can handle failed generation generate ui builder themes', async () => {
-    createUiBuilderComponentDependency_mock.createUiBuilderTheme = jest.fn().mockImplementation(() => {
-      throw new Error('ahh!');
-    });
-    const themes = generateUiBuilderThemes(context, [{}, {}]);
-    expect(themes.every(theme => theme.resultType === 'FAILURE')).toBeTruthy();
+
+  it('can throw after timeout when waiting for a succeeded job', async () => {
+    process.env.UI_BUILDER_CODEGENJOB_TIMEOUT = '1';
+    const succeededJob = { status: 'succeeded' };
+    const getJob = jest.fn().mockResolvedValueOnce({ status: 'in_progress' }).mockResolvedValueOnce(succeededJob);
+    await expect(waitForSucceededJob(getJob, { pollInterval: 2 })).rejects.toThrow('Failed to return codegen job');
+  });
+
+  it('can extract ui components from archive', async () => {
+    const mockedFetchResponse = {
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        Output: [
+          {
+            downloadUrl: 'https://s3.com',
+            fileName: 'MyComponent.jsx',
+            schemaName: 'MyComponent',
+          },
+        ],
+      }),
+      text: jest.fn().mockResolvedValue('source code'),
+    } as unknown as Response;
+    mockNodeFetch.mockResolvedValue(mockedFetchResponse);
+    mockExistsSync.mockReturnValue(true);
+    await extractUIComponents('https:://example.aws', 'tmp/ui-components');
+    expect(mockWriteFileSync).toHaveBeenCalledWith('tmp/ui-components/MyComponent.jsx', 'source code');
+  });
+
+  it('fetchWithRetries retries 3 times', async () => {
+    mockNodeFetch.mockRejectedValue(new Error('Server dropped the connection'));
+    await expect(fetchWithRetries('https://amazon.com')).rejects.toThrowError('Fetch reached max number of retries without succeeding');
+    expect(mockNodeFetch).toHaveBeenCalledTimes(3);
   });
 });

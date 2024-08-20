@@ -1,4 +1,5 @@
-import { $TSAny, $TSContext, exitOnNextTick, ResourceDoesNotExistError, ServiceSelection } from 'amplify-cli-core';
+import { $TSAny, $TSContext, AmplifyError, ServiceSelection } from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import * as inquirer from 'inquirer';
 
 import { getProjectConfig } from './get-project-config';
@@ -15,7 +16,7 @@ function filterServicesByEnabledProviders(context: $TSContext, enabledProviders:
   const filteredServices: $TSAny[] = [];
 
   if (supportedServices !== undefined && enabledProviders !== undefined) {
-    Object.keys(supportedServices).forEach(serviceName => {
+    Object.keys(supportedServices).forEach((serviceName) => {
       const { provider, alias } = supportedServices[serviceName];
 
       if (enabledProviders.includes(provider)) {
@@ -58,16 +59,15 @@ async function serviceQuestionWalkthrough(
   }
 
   if (options.length === 0) {
-    const errMessage = `No services defined by configured providers for category: ${category}`;
-    context.print.error(errMessage);
-    await context.usageData.emitError(new ResourceDoesNotExistError(errMessage));
-    exitOnNextTick(1);
+    throw new AmplifyError('ResourceDoesNotExistError', {
+      message: `No services defined by configured providers for category: ${category}`,
+    });
   }
 
   if (options.length === 1) {
     // No need to ask questions
-    context.print.info(`Using service: ${options[0].value.service}, provided by: ${options[0].value.providerName}`);
-    return new Promise(resolve => {
+    printer.info(`Using service: ${options[0].value.service}, provided by: ${options[0].value.providerName}`);
+    return new Promise((resolve) => {
       resolve(options[0].value);
     });
   }

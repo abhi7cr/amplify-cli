@@ -1,24 +1,23 @@
-import { stateManager } from 'amplify-cli-core';
+import { $TSAny, $TSContext, stateManager, IPluginPlatform, CommandLineInput } from '@aws-amplify/amplify-cli-core';
 import * as _ from 'lodash';
 import { init } from './app-config';
-// eslint-disable-next-line spellcheck/spell-checker
-import { attachExtentions as attachExtensions } from './context-extensions';
+import { attachExtensions, ProjectSettings } from '@aws-amplify/amplify-cli-core';
 import { NoUsageData, UsageData } from './domain/amplify-usageData';
-import { ProjectSettings } from './domain/amplify-usageData/IUsageData';
 import { Context } from './domain/context';
-import { Input } from './domain/input';
-import { PluginPlatform } from './domain/plugin-platform';
 
 /**
  * Initialize the context object
  */
-export const constructContext = (pluginPlatform: PluginPlatform, input: Input): Context => {
+export const constructContext = (pluginPlatform: IPluginPlatform, input: CommandLineInput): Context => {
   const context = new Context(pluginPlatform, input);
-  attachExtensions(context);
+  attachExtensions(context as unknown as $TSContext);
   return context;
 };
 
-export const isHeadlessCommand = (context: any): boolean => context.input.options && context.input.options.headless;
+/**
+ * returns true if the --headless flag is present
+ */
+export const isHeadlessCommand = (context: $TSAny): boolean => context.input.options && context.input.options.headless;
 
 /**
  * Initialize and attach the usageData object to context
@@ -31,10 +30,10 @@ export const attachUsageData = async (context: Context, processStartTimeStamp: n
     : config.usageDataConfig.isUsageTrackingEnabled;
   if (usageTrackingEnabled) {
     context.usageData = UsageData.Instance;
-    context.usageData.setIsHeadless( isHeadlessCommand(context) );
+    context.usageData.setIsHeadless(isHeadlessCommand(context));
   } else {
     context.usageData = NoUsageData.Instance;
-    context.usageData.setIsHeadless( isHeadlessCommand(context) );
+    context.usageData.setIsHeadless(isHeadlessCommand(context));
   }
   const accountId = getSafeAccountId();
   context.usageData.init(
@@ -68,7 +67,7 @@ const getSafeAccountId = (): string => {
 const getVersion = (context: Context): string => context.pluginPlatform.plugins.core[0].packageVersion;
 
 const getProjectSettings = (): ProjectSettings => {
-  const projectSettings: ProjectSettings = {};
+  const projectSettings: ProjectSettings = {} as unknown as ProjectSettings;
   if (stateManager.projectConfigExists()) {
     const projectConfig = stateManager.getProjectConfig();
     const { frontend } = projectConfig;

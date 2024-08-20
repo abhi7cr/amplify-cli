@@ -6,7 +6,8 @@ import {
   readCFNTemplate,
   buildOverrideDir,
   stateManager,
-} from 'amplify-cli-core';
+  ApiCategoryFacade,
+} from '@aws-amplify/amplify-cli-core';
 import { DeploymentResources, PackagedResourceDefinition, ResourceDeployType, StackParameters } from '../../resource-package/types';
 import * as fs from 'fs-extra';
 
@@ -24,7 +25,7 @@ const mockMeta = jest.fn(() => {
   };
 });
 
-jest.mock('amplify-cli-core');
+jest.mock('@aws-amplify/amplify-cli-core');
 const stateManager_mock = stateManager as jest.Mocked<typeof stateManager>;
 stateManager_mock.getMeta = mockMeta;
 stateManager_mock.getTeamProviderInfo = jest.fn().mockReturnValue({});
@@ -34,8 +35,10 @@ const pathManager_mock = pathManager as jest.Mocked<typeof pathManager>;
 pathManager_mock.findProjectRoot = jest.fn().mockReturnValue('projectpath');
 pathManager_mock.getBackendDirPath = jest.fn().mockReturnValue('backend');
 
-const JSONUtilities_mock = JSONUtilities as jest.Mocked<typeof JSONUtilities>;
-JSONUtilities_mock.readJson.mockImplementation((pathToJson: string) => {
+const JSONUtilitiesMock = JSONUtilities as jest.Mocked<typeof JSONUtilities>;
+JSONUtilitiesMock.stringify.mockImplementation((data) => JSON.stringify(data, null, 2));
+JSONUtilitiesMock.parse.mockImplementation((data) => JSON.parse(data));
+JSONUtilitiesMock.readJson.mockImplementation((pathToJson: string) => {
   if (pathToJson.includes('function') && pathToJson.includes('amplifyexportestlayer5f16d693')) {
     return lambdaTemplate;
   }
@@ -49,9 +52,10 @@ JSONUtilities_mock.readJson.mockImplementation((pathToJson: string) => {
       Parameters: {},
     } as unknown as Template;
   }
+  return undefined;
 });
 const readCFNTemplate_mock = readCFNTemplate as jest.MockedFunction<typeof readCFNTemplate>;
-readCFNTemplate_mock.mockImplementation(path => {
+readCFNTemplate_mock.mockImplementation((path) => {
   if (path.includes('function') && path.includes('amplifyexportestlayer5f16d693')) {
     return {
       cfnTemplate: lambdaTemplate,
@@ -72,12 +76,12 @@ readCFNTemplate_mock.mockImplementation(path => {
 });
 const buildOverrideDir_mock = buildOverrideDir as jest.MockedFunction<typeof buildOverrideDir>;
 
-buildOverrideDir_mock.mockImplementation(async (cwd: string, dest: string) => false);
+buildOverrideDir_mock.mockImplementation(async () => false);
 
 jest.mock('fs-extra');
 const fs_mock = fs as jest.Mocked<typeof fs>;
 fs_mock.existsSync.mockReturnValue(true);
-fs_mock.lstatSync.mockImplementation((_path, _options) => {
+fs_mock.lstatSync.mockImplementation(() => {
   return {
     isDirectory: jest.fn().mockReturnValue(true),
   } as unknown as fs.Stats;
@@ -103,12 +107,12 @@ jest.mock('../../zip-util', () => ({
 jest.mock('../../pre-push-cfn-processor/cfn-pre-processor', () => ({
   preProcessCFNTemplate: jest.fn().mockImplementation((cfnPath) => cfnPath),
   writeCustomPoliciesToCFNTemplate: jest.fn(),
-}))
+}));
 
 jest.mock('../../template-description-utils', () => ({
   prePushTemplateDescriptionHandler: jest.fn(),
   getDefaultTemplateDescription: jest.fn().mockReturnValue('mock description'),
-}))
+}));
 jest.mock('../../download-api-models', () => ({}));
 jest.mock('../../amplify-service-manager', () => ({}));
 jest.mock('../../iterative-deployment', () => ({}));
@@ -119,9 +123,6 @@ jest.mock('../../utils/consolidate-apigw-policies', () => ({
   consolidateApiGatewayPolicies: mockconsolidateApiGatewayPolicies,
   loadApiCliInputs: jest.fn(),
 }));
-jest.mock('../../graphql-transformer', () => ({
-  transformGraphQLSchema: mockTransformGql,
-}));
 
 const mockconsolidateApiGatewayPolicies = jest.fn(() => {
   return {
@@ -130,6 +131,7 @@ const mockconsolidateApiGatewayPolicies = jest.fn(() => {
 });
 const mockdownloadZip = jest.fn();
 const mockTransformGql = jest.fn();
+ApiCategoryFacade.transformGraphQLSchema = mockTransformGql;
 const mockS3Instance = jest.fn();
 
 const mockResource: DeploymentResources = {
@@ -242,7 +244,7 @@ const lambdaTemplate = {
   },
 };
 
-const invokePluginMethod = jest.fn((_context, _category, _service, functionName, _others) => {
+const invokePluginMethod = jest.fn((_context, _category, _service, functionName) => {
   if (functionName === 'buildResource') {
     return 'mockbuildTimeStamp';
   }
@@ -258,6 +260,7 @@ const invokePluginMethod = jest.fn((_context, _category, _service, functionName,
       exposedContainer: 'mockExposedContainer',
     };
   }
+  return undefined;
 });
 jest.mock('../../resourceParams', () => ({
   loadResourceParameters: jest.fn().mockReturnValue({}),
@@ -309,10 +312,10 @@ describe('test resource export', () => {
       category: 'providers',
     });
 
-    const resourcesWithoutProvider = mockResource.allResources.filter(r => r.category !== 'providers');
+    const resourcesWithoutProvider = mockResource.allResources.filter((r) => r.category !== 'providers');
     resourcesWithoutProvider
-      .filter(r => r.service === 'LambdaLayer')
-      .forEach(resource => {
+      .filter((r) => r.service === 'LambdaLayer')
+      .forEach((resource) => {
         expect(invokePluginMethod).nthCalledWith(invokePluginCount, mockContext, resource.category, 'LambdaLayer', 'migrateLegacyLayer', [
           mockContext,
           resource.resourceName,
@@ -327,8 +330,8 @@ describe('test resource export', () => {
     invokePluginCount++;
 
     resourcesWithoutProvider
-      .filter(r => r.build)
-      .forEach(resource => {
+      .filter((r) => r.build)
+      .forEach((resource) => {
         expect(invokePluginMethod).nthCalledWith(invokePluginCount, mockContext, 'function', resource.service, 'buildResource', [
           mockContext,
           resource,
@@ -336,7 +339,7 @@ describe('test resource export', () => {
         invokePluginCount = invokePluginCount + 1;
       });
 
-    const mockBuiltResources = resourcesWithoutProvider.map(resource => {
+    const mockBuiltResources = resourcesWithoutProvider.map((resource) => {
       if (resource.build) {
         return {
           ...resource,
@@ -347,8 +350,8 @@ describe('test resource export', () => {
     });
 
     mockBuiltResources
-      .filter(resource => resource.build)
-      .forEach(resource => {
+      .filter((resource) => resource.build)
+      .forEach((resource) => {
         expect(invokePluginMethod).nthCalledWith(invokePluginCount, mockContext, 'function', resource.service, 'packageResource', [
           mockContext,
           resource,
@@ -364,7 +367,7 @@ describe('test resource export', () => {
     await resourceExport.writeResourcesToDestination(packagedResources);
 
     let copyCount = 1;
-    packagedResources.forEach(resource => {
+    packagedResources.forEach((resource) => {
       if (resource.packagerParams) {
         expect(fs_mock.copy).nthCalledWith(
           copyCount++,
@@ -426,11 +429,11 @@ describe('test resource export', () => {
       }
     });
 
-    if (packagedResources.some(r => r.service === 'ElasticContainer')) {
+    if (packagedResources.some((r) => r.service === 'ElasticContainer')) {
       expect(fs_mock.copy).nthCalledWith(
         copyCount++,
-        path.join(__dirname, '../../../', 'resources', 'custom-resource-pipeline-awaiter.zip'),
-        path.join(exportPath, 'amplify-auxiliary-files', 'custom-resource-pipeline-awaiter.zip'),
+        path.join(__dirname, '../../../', 'resources', 'custom-resource-pipeline-awaiter-18.zip'),
+        path.join(exportPath, 'amplify-auxiliary-files', 'custom-resource-pipeline-awaiter-18.zip'),
         {
           overwrite: true,
           preserveTimestamps: true,
@@ -457,7 +460,7 @@ describe('test resource export', () => {
     expect(transformedResources).toBeDefined();
 
     expect(invokePluginMethod).nthCalledWith(invokePluginCount++, mockContext, 'auth', undefined, 'prePushAuthHook', [mockContext]);
-    const apiResource = packagedResources.find(r => r.service === 'ElasticContainer');
+    const apiResource = packagedResources.find((r) => r.service === 'ElasticContainer');
     expect(invokePluginMethod).nthCalledWith(invokePluginCount++, mockContext, 'api', undefined, 'generateContainersArtifacts', [
       mockContext,
       apiResource,

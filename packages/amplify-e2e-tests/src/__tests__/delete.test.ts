@@ -23,12 +23,11 @@ import {
   getS3StorageBucketName,
   pinpointAppExist,
   pushToCloud,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
+import * as fs from 'fs-extra';
 import { addEnvironment, checkoutEnvironment, removeEnvironment } from '../environment/env';
 import { addCodegen } from '../codegen/add';
-import * as fs from 'fs-extra';
 import { getAWSExportsPath } from '../aws-exports/awsExports';
-import _ from 'lodash';
 
 describe('amplify delete', () => {
   let projRoot: string;
@@ -60,12 +59,13 @@ describe('amplify delete', () => {
     const pinpointResourceName = await addPinpointAnalytics(projRoot);
     await pushToCloud(projRoot);
     const amplifyMeta = getProjectMeta(projRoot);
-    const pintpointAppId = amplifyMeta.analytics[pinpointResourceName].output.Id;
-    let pinpointAppExists = await pinpointAppExist(pintpointAppId);
+    const pinpointAppId = amplifyMeta.analytics[pinpointResourceName].output.Id;
+    const pinpointRegion = amplifyMeta.analytics[pinpointResourceName].output.Region;
+    let pinpointAppExists = await pinpointAppExist(pinpointAppId, pinpointRegion);
     expect(pinpointAppExists).toBeTruthy();
     await amplifyDelete(projRoot);
     await timeout(4 * 1000);
-    pinpointAppExists = await pinpointAppExist(pintpointAppId);
+    pinpointAppExists = await pinpointAppExist(pinpointAppId, pinpointRegion);
     expect(pinpointAppExists).toBeFalsy();
   });
 
@@ -84,8 +84,8 @@ describe('amplify delete', () => {
 
   it('should delete bucket', async () => {
     await initJSProjectWithProfile(projRoot, {});
-    await addAuthWithDefault(projRoot, {});
-    await addS3(projRoot, {});
+    await addAuthWithDefault(projRoot);
+    await addS3(projRoot);
     await amplifyPushWithoutCodegen(projRoot);
     const bucketName = getS3StorageBucketName(projRoot);
     await putFiles(bucketName);
@@ -105,7 +105,7 @@ describe('amplify delete', () => {
   });
 });
 
-async function testDeletion(projRoot: string, settings: { ios?: Boolean; android?: Boolean }) {
+async function testDeletion(projRoot: string, settings: { ios?: boolean; android?: boolean }) {
   const amplifyMeta = getProjectMeta(projRoot);
   const meta = amplifyMeta.providers.awscloudformation;
   const deploymentBucketName1 = meta.DeploymentBucketName;
@@ -122,8 +122,8 @@ async function testDeletion(projRoot: string, settings: { ios?: Boolean; android
   if (meta.AmplifyAppId) expect(await appExists(meta.AmplifyAppId, meta.Region)).toBe(false);
   expect(await bucketNotExists(deploymentBucketName1)).toBe(true);
   expect(await bucketNotExists(deploymentBucketName2)).toBe(true);
-  expect(AuthRoleName).not.toBeIAMRoleWithArn(AuthRoleName);
-  expect(UnauthRoleName).not.toBeIAMRoleWithArn(UnauthRoleName);
+  await expect(AuthRoleName).not.toBeIAMRoleWithArn(AuthRoleName);
+  await expect(UnauthRoleName).not.toBeIAMRoleWithArn(UnauthRoleName);
   // check that config/exports file was deleted
   if (settings.ios) {
     expect(fs.existsSync(getAWSConfigIOSPath(projRoot))).toBe(false);
@@ -138,14 +138,12 @@ async function testDeletion(projRoot: string, settings: { ios?: Boolean; android
 
 async function putFiles(bucket: string, count = 1001) {
   const s3 = new S3();
-  const s3Params = [...Array(count)].map((_, num) => {
-    return {
-      Bucket: bucket,
-      Body: 'dummy body',
-      Key: `${num}.txt`,
-    };
-  });
-  await Promise.all(s3Params.map(p => s3.putObject(p).promise()));
+  const s3Params = [...Array(count)].map((_, num) => ({
+    Bucket: bucket,
+    Body: 'dummy body',
+    Key: `${num}.txt`,
+  }));
+  await Promise.all(s3Params.map((p) => s3.putObject(p).promise()));
 }
 
 async function bucketExists(bucket: string) {
@@ -175,7 +173,7 @@ async function appExists(appId: string, region: string) {
 }
 
 async function timeout(timeout: number) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     setTimeout(resolve, timeout);
   });
 }

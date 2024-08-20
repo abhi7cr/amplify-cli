@@ -1,22 +1,29 @@
+import {
+  $TSAny,
+  isCI,
+  CommandLineInput,
+  InputOptions,
+  IUsageDataPayload,
+  ProjectSettings,
+  TimedCodePath,
+} from '@aws-amplify/amplify-cli-core';
+import { IFlowReport } from '@aws-amplify/amplify-cli-shared-interfaces';
 import * as os from 'os';
-import { isCI } from 'amplify-cli-core';
-import { IFlowReport } from 'amplify-cli-shared-interfaces';
-import { Input } from '../input';
-import { getLatestPayloadVersion } from './VersionManager';
 import { SerializableError } from './SerializableError';
-import { ProjectSettings, TimedCodePath } from './IUsageData';
+import { getLatestPayloadVersion } from './VersionManager';
 
 /**
  * Metadata that is sent to the usage data endpoint
  */
-export class UsageDataPayload {
+export class UsageDataPayload implements IUsageDataPayload {
   sessionUuid: string;
   installationUuid: string;
   amplifyCliVersion: string;
-  input: Input | null;
-  inputOptions: InputOptions;
+  input: CommandLineInput | null;
+  inputOptions: CommandLineInput['options'];
   timestamp: string;
   error!: SerializableError;
+  downstreamException!: SerializableError;
   payloadVersion: string;
   osPlatform: string;
   osRelease: string;
@@ -27,18 +34,20 @@ export class UsageDataPayload {
   projectSetting: ProjectSettings;
   codePathDurations: Partial<Record<TimedCodePath, number>>;
   flowReport: IFlowReport;
+  pushNormalizationFactor = 1;
+
   constructor(
     sessionUuid: string,
     installationUuid: string,
     version: string,
-    input: Input,
+    input: CommandLineInput,
     error: Error | null,
     state: string,
     accountId: string,
     project: ProjectSettings,
     inputOptions: InputOptions,
     codePathDurations: Partial<Record<TimedCodePath, number>>,
-    flowReport : IFlowReport,
+    flowReport: IFlowReport,
   ) {
     this.sessionUuid = sessionUuid;
     this.installationUuid = installationUuid;
@@ -58,11 +67,9 @@ export class UsageDataPayload {
     this.flowReport = flowReport;
     if (error) {
       this.error = new SerializableError(error);
+      if ('downstreamException' in error && (error as $TSAny).downstreamException) {
+        this.downstreamException = new SerializableError((error as $TSAny).downstreamException as Error);
+      }
     }
   }
 }
-
-/**
- * Command-line args that were specified to the currently running command
- */
-export type InputOptions = Record<string, string | boolean>;

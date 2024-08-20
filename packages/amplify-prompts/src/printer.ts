@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import os from 'os';
-import { isDebug, isSilent } from './flags';
+import { isDebug, isHeadless, isSilent } from './flags';
 
 /**
  * Provides methods for printing lines to a writeable stream (stdout by default)
@@ -23,15 +23,20 @@ export class AmplifyPrinter implements Printer {
   };
 
   success = (line: string): void => {
-    this.writeSilenceableLine(`✅ ${chalk.green(line)}`);
+    this.writeSilenceableLine(`${isHeadless ? '' : '✅ '}${chalk.green(line)}`);
   };
 
   warn = (line: string): void => {
-    this.writeLine(`⚠️ ${chalk.yellow(line)}`);
+    this.writeLine(`${isHeadless ? '' : '⚠️ '}${chalk.yellow(line)}`);
   };
 
-  error = (line: string): void => {
-    this.writeLine(`🛑 ${chalk.red(line)}`);
+  // disable-eslint-next-line @typescript-eslint/no-explicit-any
+  error = (line: string, error?: any): void => {
+    this.writeLine(`${isHeadless ? '' : '🛑 '}${chalk.red(line)}`);
+    const errorMessage = error?.message ?? error;
+    if (errorMessage) {
+      this.writeLine(`${chalk.red(errorMessage)}`);
+    }
   };
 
   private writeSilenceableLine = (line?: string): void => {
@@ -40,7 +45,7 @@ export class AmplifyPrinter implements Printer {
     }
   };
 
-  private writeLine = (line: string = ''): void => {
+  private writeLine = (line = ''): void => {
     this.outputStream.write(`${line}${os.EOL}`);
   };
 }
@@ -50,13 +55,16 @@ export class AmplifyPrinter implements Printer {
  */
 export const printer: Printer = new AmplifyPrinter();
 
+/**
+ * defines the printer type
+ */
 export type Printer = {
   debug: (line: string) => void;
   info: (line: string, color?: Color) => void;
   blankLine: () => void;
   success: (line: string) => void;
   warn: (line: string) => void;
-  error: (line: string) => void;
+  error: (line: string, error?: any) => void;
 };
 
 type Color = 'green' | 'blue' | 'yellow' | 'red' | 'reset';

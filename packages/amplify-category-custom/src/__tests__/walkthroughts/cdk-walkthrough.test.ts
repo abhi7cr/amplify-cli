@@ -1,5 +1,5 @@
-import { $TSContext, JSONUtilities, pathManager } from 'amplify-cli-core';
-import { prompter } from 'amplify-prompts';
+import { $TSContext, JSONUtilities, pathManager } from '@aws-amplify/amplify-cli-core';
+import { prompter } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
 import { buildCustomResources } from '../../utils/build-custom-resources';
 import { customResourceNameQuestion } from '../../utils/common-questions';
@@ -8,8 +8,8 @@ import { addCDKWalkthrough } from '../../walkthroughs/cdk-walkthrough';
 jest.mock('../../utils/common-questions');
 jest.mock('../../utils/build-custom-resources');
 
-jest.mock('amplify-cli-core');
-jest.mock('amplify-prompts');
+jest.mock('@aws-amplify/amplify-cli-core');
+jest.mock('@aws-amplify/amplify-prompts');
 
 jest.mock('fs-extra', () => ({
   readFileSync: jest.fn().mockReturnValue('mockCode'),
@@ -22,7 +22,7 @@ pathManager.getBackendDirPath = jest.fn().mockReturnValue('mockTargetDir');
 (JSONUtilities.writeJson = jest.fn()), (JSONUtilities.readJson = jest.fn());
 
 const buildCustomResources_mock = buildCustomResources as jest.MockedFunction<typeof buildCustomResources>;
-let customResourceNameQuestion_mock = customResourceNameQuestion as jest.MockedFunction<typeof customResourceNameQuestion>;
+const customResourceNameQuestion_mock = customResourceNameQuestion as jest.MockedFunction<typeof customResourceNameQuestion>;
 customResourceNameQuestion_mock.mockResolvedValue('customresoourcename');
 
 describe('addCDKWalkthrough scenarios', () => {
@@ -46,6 +46,6 @@ describe('addCDKWalkthrough scenarios', () => {
     expect(buildCustomResources_mock).toHaveBeenCalledWith(mockContext, 'customresoourcename');
     expect(mockContext.amplify.openEditor).toHaveBeenCalledTimes(1);
     expect(mockContext.amplify.updateamplifyMetaAfterResourceAdd).toHaveBeenCalledTimes(1);
-    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+    expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
   });
 });

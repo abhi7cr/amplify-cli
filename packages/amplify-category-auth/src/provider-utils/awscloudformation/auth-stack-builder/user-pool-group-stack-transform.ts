@@ -1,41 +1,47 @@
 import {
+  $TSAny,
   $TSContext,
   AmplifyCategories,
+  AmplifyCategoryTransform,
+  AmplifyError,
   AmplifySupportedService,
   buildOverrideDir,
   CFNTemplateFormat,
   JSONUtilities,
   pathManager,
-  writeCFNTemplate,
+  runOverride,
   Template,
-  AmplifyStackTemplate,
-  AmplifyCategoryTransform,
-  $TSAny,
-} from 'amplify-cli-core';
-import { AuthStackSynthesizer } from './stack-synthesizer';
-import * as cdk from '@aws-cdk/core';
-import { AuthInputState } from '../auth-inputs-manager/auth-input-state';
+  writeCFNTemplate,
+} from '@aws-amplify/amplify-cli-core';
+import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
-import { AmplifyUserPoolGroupStack, AmplifyUserPoolGroupStackOutputs } from './auth-user-pool-group-stack-builder';
-import { printer, formatter } from 'amplify-prompts';
-import _ from 'lodash';
+import { AuthInputState } from '../auth-inputs-manager/auth-input-state';
 import { CognitoCLIInputs } from '../service-walkthrough-types/awsCognito-user-input-types';
-import * as fs from 'fs-extra';
-import * as vm from 'vm2';
-import os from 'os';
+import { AmplifyUserPoolGroupStack, AmplifyUserPoolGroupStackOutputs } from './index';
+import { AuthStackSynthesizer } from './stack-synthesizer';
+import { getProjectInfo } from '@aws-amplify/cli-extensibility-helper';
 
+/**
+ * UserPool groups metadata
+ */
 export type UserPoolGroupMetadata = {
   groupName: string;
   precedence: number;
-  customPolicies?: any;
+  customPolicies?: $TSAny;
 };
 
+/**
+ * UserPoolGroupStackOptions
+ */
 export type AmplifyUserPoolGroupStackOptions = {
   groups: UserPoolGroupMetadata[];
   identityPoolName?: string;
   cognitoResourceName: string;
 };
 
+/**
+ *  Class Amplify UserPoolGroups
+ */
 export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
   private _app: cdk.App;
   private _userPoolGroupTemplateObj: AmplifyUserPoolGroupStack; // Props to modify Root stack data
@@ -59,6 +65,9 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
     this._service = AmplifySupportedService.COGNITOUSERPOOLGROUPS;
   }
 
+  /**
+   * Entry point to UserPoolGroup cfn generation
+   */
   public async transform(context: $TSContext): Promise<Template> {
     // parse Input data
     const userPoolGroupStackOptions = await this.generateStackProps(context);
@@ -78,11 +87,9 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
   }
 
   /**
-   * Generates CFN REsources for Auth
-   * @returns CFN Template
+   * Generates CFN Resources for Auth
    */
-
-  private generateStackResources = async (props: AmplifyUserPoolGroupStackOptions) => {
+  private generateStackResources = async (props: AmplifyUserPoolGroupStackOptions): Promise<void> => {
     this._userPoolGroupTemplateObj = new AmplifyUserPoolGroupStack(this._app, 'AmplifyUserPoolGroupStack', {
       synthesizer: this._synthesizer,
     });
@@ -158,9 +165,9 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
     // generate resources
     await this._userPoolGroupTemplateObj.generateUserPoolGroupResources(props);
 
-    // generate CFN outputs again to generate same Output Names as cdk doesnt allow resource with same logical names
+    // generate CFN outputs again to generate same Output Names as cdk doesn't allow resource with same logical names
     if (props.identityPoolName) {
-      props.groups.forEach(group => {
+      props.groups.forEach((group) => {
         this.__userPoolGroupTemplateObjOutputs.addCfnOutput(
           {
             value: cdk.Fn.getAtt(`${group.groupName}GroupRole`, 'Arn').toString(),
@@ -174,40 +181,34 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
   public applyOverride = async (): Promise<void> => {
     const backendDir = pathManager.getBackendDirPath();
     const overrideDir = path.join(backendDir, this._category, this._resourceName);
-    const isBuild = await buildOverrideDir(backendDir, overrideDir).catch(error => {
-      printer.error(`Build error : ${error.message}`);
-      throw new Error(error);
-    });
+    const isBuild = await buildOverrideDir(backendDir, overrideDir);
     if (isBuild) {
-      const overrideCode: string = await fs.readFile(path.join(overrideDir, 'build', 'override.js'), 'utf-8').catch(() => {
-        formatter.list(['No override File Found', `To override ${this._resourceName} run amplify override auth`]);
-        return '';
-      });
-      const sandboxNode = new vm.NodeVM({
-        console: 'inherit',
-        timeout: 5000,
-        sandbox: {},
-      });
+      const projectInfo = getProjectInfo();
       try {
-        sandboxNode.run(overrideCode).override(this._userPoolGroupTemplateObj as AmplifyUserPoolGroupStack & AmplifyStackTemplate);
+        await runOverride(overrideDir, this._userPoolGroupTemplateObj, projectInfo);
       } catch (err: $TSAny) {
-        const error = new Error(`Skipping override due to ${err}${os.EOL}`);
-        printer.error(`${error}`);
-        error.stack = undefined;
-        throw error;
+        throw new AmplifyError(
+          'InvalidOverrideError',
+          {
+            message: `Executing overrides failed.`,
+            details: err.message,
+            resolution: 'There may be runtime errors in your overrides file. If so, fix the errors and try again.',
+          },
+          err,
+        );
       }
     }
   };
+
   /**
-   *
-   * @returns Object required to generate Stack using cdk
+   * Object required to generate Stack using cdk
    */
   private generateStackProps = async (context: $TSContext): Promise<AmplifyUserPoolGroupStackOptions> => {
     const resourceDirPath = path.join(pathManager.getBackendDirPath(), 'auth', 'userPoolGroups', 'user-pool-group-precedence.json');
     const groups = JSONUtilities.readJson(resourceDirPath, { throwIfNotExist: true });
-    const cliState = new AuthInputState(this._authResourceName);
+    const cliState = new AuthInputState(context, this._authResourceName);
     this._cliInputs = cliState.getCLIInputPayload();
-    const identityPoolName = this._cliInputs.cognitoConfig.identityPoolName;
+    const { identityPoolName } = this._cliInputs.cognitoConfig;
     return {
       groups: groups as UserPoolGroupMetadata[],
       identityPoolName,
@@ -216,8 +217,7 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
   };
 
   /**
-   *
-   * @returns return CFN templates sunthesized by app
+   * return CFN templates synthesized by app
    */
   public synthesizeTemplates = async (): Promise<Template> => {
     this._app.synth();
@@ -229,23 +229,23 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
     return cfnUserPoolGroupStack;
   };
 
-  public saveBuildFiles = async (context: $TSContext, template: Template): Promise<void> => {
+  public saveBuildFiles = async (__context: $TSContext, template: Template): Promise<void> => {
     const cognitoStackFileName = `${this._resourceName}-cloudformation-template.json`;
-    const cognitostackFilePath = path.join(
+    const cognitoStackFilePath = path.join(
       pathManager.getBackendDirPath(),
       this._category,
       this._resourceName,
       'build',
       cognitoStackFileName,
     );
-    await writeCFNTemplate(template, cognitostackFilePath, {
+    await writeCFNTemplate(template, cognitoStackFilePath, {
       templateFormat: CFNTemplateFormat.JSON,
     });
     // write parameters.json file
-    this.writeBuildFiles(context);
+    this.writeBuildFiles();
   };
 
-  private writeBuildFiles = async (context: $TSContext) => {
+  private writeBuildFiles = (): void => {
     const parametersJSONFilePath = path.join(
       pathManager.getBackendDirPath(),
       this._category,
@@ -263,11 +263,11 @@ export class AmplifyUserPoolGroupTransform extends AmplifyCategoryTransform {
       },
     };
 
-    //save parameters
-    let parameters = {
+    // save parameters
+    const parameters = {
       ...roles,
     };
-    //save parameters
+    // save parameters
     JSONUtilities.writeJson(parametersJSONFilePath, parameters);
   };
 }

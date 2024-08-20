@@ -7,11 +7,11 @@ import {
   initJSProjectWithProfile,
   updateApiSchema,
   cancelAmplifyMockApi,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { existsSync } from 'fs';
 import path from 'path';
-import { addCodegen } from '../codegen/add';
 import * as fs from 'fs-extra';
+import { addCodegen } from '../codegen/add';
 
 describe('amplify mock api (GraphQL)', () => {
   let projRoot: string;
@@ -46,7 +46,7 @@ describe('amplify mock api (GraphQL)', () => {
     await addCustomResolver(projRoot, apiName, resolverReqName, resolver);
 
     await addCodegen(projRoot, {});
-    await cancelAmplifyMockApi(projRoot, {});
+    await cancelAmplifyMockApi(projRoot);
 
     const resolversPath = path.join(projRoot, 'amplify', 'backend', 'api', apiName, 'resolvers');
     const files = await fs.readdir(resolversPath);

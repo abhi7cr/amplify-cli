@@ -1,6 +1,6 @@
 {
   "name": "amplify-nodejs-function-runtime-provider",
-  "version": "2.2.28",
+  "version": "2.5.24",
   "description": "Provides functionality related to functions in NodeJS on AWS",
   "repository": {
     "type": "git",
@@ -16,25 +16,29 @@
     "lambda",
     "nodejs"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "watch": "tsc -w",
     "build": "tsc",
-    "clean": "rimraf lib tsconfig.tsbuildinfo",
-    "test": "jest"
+    "clean": "rimraf lib tsconfig.tsbuildinfo node_modules",
+    "test": "jest --logHeapUsage",
+    "extract-api": "ts-node ../../scripts/extract-api.ts"
   },
   "dependencies": {
-    "amplify-cli-core": "2.6.0",
-    "amplify-function-plugin-interface": "1.9.4",
-    "archiver": "^5.3.0",
+    "@aws-amplify/amplify-cli-core": "4.3.10",
+    "@aws-amplify/amplify-function-plugin-interface": "1.12.1",
     "execa": "^5.1.1",
     "exit": "^0.1.2",
     "fs-extra": "^8.1.0",
     "glob": "^7.2.0"
   },
   "devDependencies": {
-    "@types/archiver": "^5.1.1",
     "@types/exit": "^0.1.31",
-    "@types/node": "^12.12.6"
+    "@types/node": "^12.12.6",
+    "@types/semver": "^7",
+    "semver": "^7.5.4"
   },
   "jest": {
     "transform": {
@@ -45,7 +49,9 @@
       "src/**/*.ts",
       "!**/*.d.ts"
     ],
-    "testURL": "http://localhost/",
+    "testEnvironmentOptions": {
+      "url": "http://localhost"
+    },
     "testRegex": "(src/__tests__/.*.test.(js|ts))$",
     "moduleFileExtensions": [
       "ts",
@@ -54,6 +60,11 @@
       "jsx",
       "json",
       "node"
+    ]
+  },
+  "berry": {
+    "plugins": [
+      "@yarn/plugin-typescript"
     ]
   }
 }

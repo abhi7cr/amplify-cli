@@ -21,7 +21,7 @@ export type FunctionTemplateContributorFactory = (context: any) => Contributor<P
 export type FunctionTemplateParameters = Pick<FunctionParameters, 'dependsOn' | 'functionTemplate' | 'triggerEventSourceMappings'>;
 
 // Generic interfaces / types for all contributors
-// context is the Amplify core context object (unfourtunately no type for this)
+// context is the Amplify core context object (unfortunately no type for this)
 
 export interface Contributor<T extends Partial<FunctionParameters>, K> {
   contribute(request: K): Promise<T>;
@@ -72,6 +72,7 @@ export type BuildRequest = {
   lastBuildTimeStamp?: Date;
   lastBuildType?: BuildType;
   service?: string;
+  scripts?: { build: string };
 };
 
 export enum BuildType {
@@ -99,14 +100,14 @@ export type BuildResult = {
 
 // Result of packaging a function
 export type PackageResult = {
-  packageHash?: string; // undefined if no repacking necessary. Otherwise, it is a hash that uniquiely identifies the package
+  packageHash?: string; // undefined if no repacking necessary. Otherwise, it is a hash that uniquely identifies the package
   zipEntries?: ZipEntry[]; // undefined if no zipping required for anytime
 };
 
 export type ZipEntry = {
   sourceFolder?: string; // files to zip in folder
   packageFolder?: string; // directories to zip (layers)
-  ignoreFiles?: string[]; // ignore patterns for sourcefolder
+  ignoreFiles?: string[]; // ignore patterns for source folder
 };
 
 export type CheckDependenciesResult = {
@@ -128,7 +129,7 @@ export type FunctionParameters = {
   functionTemplate?: FunctionTemplate; // fully describes the template that will be used
   categoryPolicies?: object[]; // IAM policies that should be applied to this lambda
   skipEdit?: boolean; // Whether or not to prompt to edit the function after creation
-  mutableParametersState?: any; // Contains the object that is written to function-parameters.json. Kindof a hold-over from older code
+  mutableParametersState?: any; // Contains the object that is written to function-parameters.json. Kind of a hold-over from older code
   environmentMap?: Record<string, any>; // Existing function environment variable map. Should refactor to use dependsOn directly
   triggerEventSourceMappings?: any; // Used for dynamo / kinesis function triggers. May want to refactor
   topLevelComment?: string; // LEGACY Used to write available environment variables at top of template files
@@ -141,6 +142,7 @@ export type FunctionParameters = {
   defaultRuntime?: string;
   skipAdvancedSection?: boolean;
   skipNextSteps?: boolean;
+  scripts?: { build: string };
 };
 
 /**
@@ -169,6 +171,7 @@ export interface FunctionTriggerParameters {
   cloudResourceTemplatePath?: string;
   environmentVariables?: Record<string, string>;
   skipNextSteps?: boolean;
+  scripts?: { build: string };
 }
 
 export interface ProviderContext {

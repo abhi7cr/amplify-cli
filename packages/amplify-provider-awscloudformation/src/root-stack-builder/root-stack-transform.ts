@@ -1,35 +1,48 @@
-import { AmplifyRootStackTemplate } from '@aws-amplify/cli-extensibility-helper';
-import * as cdk from '@aws-cdk/core';
-import { $TSAny, $TSContext, buildOverrideDir, CFNTemplateFormat, pathManager, Template, writeCFNTemplate } from 'amplify-cli-core';
-import { printer, formatter } from 'amplify-prompts';
-import * as fs from 'fs-extra';
-import os from 'os';
+import { AmplifyRootStackTemplate, getProjectInfo } from '@aws-amplify/cli-extensibility-helper';
+import * as cdk from 'aws-cdk-lib';
+import {
+  $TSContext,
+  AmplifyError,
+  AmplifyFault,
+  buildOverrideDir,
+  CFNTemplateFormat,
+  pathManager,
+  runOverride,
+  Template,
+  writeCFNTemplate,
+} from '@aws-amplify/amplify-cli-core';
 import * as path from 'path';
-import * as vm from 'vm2';
 import { AmplifyRootStack, AmplifyRootStackOutputs } from './root-stack-builder';
-import { RootStackSythesizer } from './stack-synthesizer';
+import { RootStackSynthesizer } from './stack-synthesizer';
 
+/**
+ * class to manage stack lifecycle
+ */
 export class AmplifyRootStackTransform {
   private app: cdk.App | undefined;
   private _rootTemplateObj: AmplifyRootStack; // Props to modify Root stack data
-  private _synthesizer: RootStackSythesizer;
-  private _synthesizerOutputs: RootStackSythesizer;
+  private _synthesizer: RootStackSynthesizer;
+  private _synthesizerOutputs: RootStackSynthesizer;
   private _rootTemplateObjOutputs: AmplifyRootStackOutputs;
   private _resourceName: string;
 
   constructor(resourceName: string) {
     this._resourceName = resourceName;
-    this._synthesizer = new RootStackSythesizer();
+    this._synthesizer = new RootStackSynthesizer();
     this.app = new cdk.App();
-    this._synthesizerOutputs = new RootStackSythesizer();
+    this._synthesizerOutputs = new RootStackSynthesizer();
   }
 
+  /**
+   * transform root stack, applying any overrides
+   */
   public async transform(context: $TSContext): Promise<Template> {
     // generate cfn Constructs and AmplifyRootStackTemplate object to get overridden
     await this.generateRootStackTemplate();
 
     // apply override on Amplify Object having CDK Constructs for Root Stack
-    if (context.input.command !== 'init') {
+    // enabling overrides for hosting when forcepush flag is used with init
+    if (context.input.command !== 'init' || (context.input.command === 'init' && context?.input?.options?.forcePush === true)) {
       await this.applyOverride();
     }
 
@@ -43,39 +56,25 @@ export class AmplifyRootStackTransform {
     return template;
   }
 
-  private applyOverride = async () => {
+  private applyOverride = async (): Promise<void> => {
     const backendDir = pathManager.getBackendDirPath();
-    const overrideFilePath = path.join(backendDir, this._resourceName);
-    let isBuild = false;
-    try {
-      isBuild = await buildOverrideDir(backendDir, overrideFilePath);
-    } catch (error) {
-      printer.error(`Build error : ${error.message}`);
-      throw new Error(error);
-    }
+    const overrideDir = path.join(backendDir, this._resourceName);
+    const isBuild = await buildOverrideDir(backendDir, overrideDir);
     // skip if packageManager or override.ts not found
     if (isBuild) {
-      const overrideCode: string = await fs.readFile(path.join(overrideFilePath, 'build', 'override.js'), 'utf-8').catch(() => {
-        formatter.list(['No override File Found', `To override ${this._resourceName} run amplify override auth`]);
-        return '';
-      });
-      const sandboxNode = new vm.NodeVM({
-        console: 'inherit',
-        timeout: 5000,
-        sandbox: {},
-        require: {
-          context: 'sandbox',
-          builtin: ['path'],
-          external: true,
-        },
-      });
+      const projectInfo = getProjectInfo();
       try {
-        sandboxNode.run(overrideCode).override(this._rootTemplateObj as AmplifyRootStackTemplate);
-      } catch (err: $TSAny) {
-        const error = new Error(`Skipping override due to ${err}${os.EOL}`);
-        printer.error(`${error}`);
-        error.stack = undefined;
-        throw error;
+        await runOverride(overrideDir, this._rootTemplateObj, projectInfo);
+      } catch (err) {
+        throw new AmplifyError(
+          'InvalidOverrideError',
+          {
+            message: `Executing overrides failed.`,
+            details: err.message,
+            resolution: 'There may be runtime errors in your overrides file. If so, fix the errors and try again.',
+          },
+          err,
+        );
       }
     }
   };
@@ -84,7 +83,7 @@ export class AmplifyRootStackTransform {
    * Generates Root stack Template
    * @returns CFN Template
    */
-  private generateRootStackTemplate = async () => {
+  private generateRootStackTemplate = async (): Promise<void> => {
     this._rootTemplateObj = new AmplifyRootStack(this.app, 'AmplifyRootStack', { synthesizer: this._synthesizer });
 
     this._rootTemplateObj.addCfnParameter(
@@ -187,8 +186,7 @@ export class AmplifyRootStackTransform {
   };
 
   /**
-   *
-   * @returns return CFN templates sunthesized by app
+   * return CFN templates synthesized by app
    */
   private synthesizeTemplates = async (): Promise<Template> => {
     this.app?.synth();
@@ -200,20 +198,26 @@ export class AmplifyRootStackTransform {
     return cfnRootStack;
   };
 
-  private saveBuildFiles = async (context: $TSContext, template: Template) => {
-    const rootStackFileName = `root-cloudformation-stack.json`;
-    const rootstackFilePath = path.join(pathManager.getBackendDirPath(), this._resourceName, 'build', rootStackFileName);
+  private saveBuildFiles = async (context: $TSContext, template: Template): Promise<void> => {
+    const rootStackFileName = 'root-cloudformation-stack.json';
+    const rootStackFilePath = path.join(pathManager.getBackendDirPath(), this._resourceName, 'build', rootStackFileName);
     // write CFN template
-    await writeCFNTemplate(template, rootstackFilePath, {
+    await writeCFNTemplate(template, rootStackFilePath, {
       templateFormat: CFNTemplateFormat.JSON,
+      minify: context.input.options?.minify,
     });
   };
 
+  /**
+   * return root stack
+   */
   public getRootStack(): AmplifyRootStack {
-    if (this._rootTemplateObj != null) {
+    if (this._rootTemplateObj) {
       return this._rootTemplateObj;
-    } else {
-      throw new Error(`Root Stack Template doesn't exist.`);
     }
+
+    throw new AmplifyFault('RootStackNotFoundFault', {
+      message: `Root Stack Template doesn't exist.`,
+    });
   }
 }

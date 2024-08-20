@@ -9,7 +9,7 @@ import {
   amplifyPush,
   updateApiSchema,
   amplifyPushUpdate,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 
 describe('Schema iterative update - create update and delete', () => {
   let projectDir: string;
@@ -36,6 +36,8 @@ describe('Schema iterative update - create update and delete', () => {
 
     const finalSchema = path.join('iterative-push', 'add-remove-and-update-key', 'final-schema.graphql');
     await updateApiSchema(projectDir, apiName, finalSchema);
+    console.log('starting iterative updates');
     await amplifyPushUpdate(projectDir);
+    console.log('done with iterative updates');
   });
 });

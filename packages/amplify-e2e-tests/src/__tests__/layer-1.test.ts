@@ -1,16 +1,12 @@
 import {
-  addFunction,
   addLayer,
   addOptData,
-  amplifyPull,
   amplifyPushAuth,
   amplifyPushLayer,
   amplifyStatus,
   createNewProjectDir,
   deleteProject,
   deleteProjectDir,
-  ExecutionContext,
-  getAppId,
   getCurrentLayerArnFromMeta,
   getProjectConfig,
   getProjectMeta,
@@ -19,15 +15,12 @@ import {
   LayerPermissionChoice,
   LayerPermissionName,
   LayerRuntime,
-  removeFunction,
   removeLayer,
-  removeLayerVersion,
   updateLayer,
-  updateOptData,
   validateLayerDir,
   validateLayerMetadata,
   validatePushedVersion,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { v4 as uuid } from 'uuid';
 import { addEnvironment, checkoutEnvironment, listEnvironment } from '../environment/env';
 
@@ -182,7 +175,7 @@ describe('amplify add lambda layer', () => {
       projName,
     };
 
-    const noLayerEnv = 'nolayerenv';
+    const noLayerEnv = 'nolyrtest';
 
     await addEnvironment(projRoot, { envName: noLayerEnv });
     await checkoutEnvironment(projRoot, { envName });

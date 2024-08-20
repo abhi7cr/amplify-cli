@@ -1,19 +1,28 @@
 /* eslint-disable class-methods-use-this */
-import { v4 as uuid } from 'uuid';
+import { ICommandInput, IFlowReport } from '@aws-amplify/amplify-cli-shared-interfaces';
+import { prompter, printer } from '@aws-amplify/amplify-prompts';
 import https from 'https';
-import { UrlWithStringQuery } from 'url';
-import { JSONUtilities } from 'amplify-cli-core';
 import { pick } from 'lodash';
-import { ICommandInput, IFlowReport } from 'amplify-cli-shared-interfaces';
-import { Input } from '../input';
-import redactInput from './identifiable-input-regex';
-import { UsageDataPayload, InputOptions } from './UsageDataPayload';
-import { getUrl } from './getUsageDataUrl';
+import { UrlWithStringQuery } from 'url';
+import { v4 as uuid } from 'uuid';
+import { CLIInput } from '../command-input';
 import {
-  IUsageData, TimedCodePath, ProjectSettings, StartableTimedCodePath, StoppableTimedCodePath, FromStartupTimedCodePaths,
-} from './IUsageData';
-import { Timer } from './Timer';
+  JSONUtilities,
+  FromStartupTimedCodePaths,
+  InputOptions,
+  IUsageData,
+  ManuallyTimedCodePath,
+  IUsageDataPayload,
+  ProjectSettings,
+  StartableTimedCodePath,
+  StoppableTimedCodePath,
+  TimedCodePath,
+} from '@aws-amplify/amplify-cli-core';
 import { CLIFlowReport } from './FlowReport';
+import { getUrl } from './getUsageDataUrl';
+import redactInput from './identifiable-input-regex';
+import { Timer } from './Timer';
+import { UsageDataPayload } from './UsageDataPayload';
 
 /**
  * Singleton class that manages the lifecycle of usage data during a CLI command
@@ -23,7 +32,7 @@ export class UsageData implements IUsageData {
   accountId = '';
   installationUuid = '';
   version = '';
-  input: Input;
+  input: CLIInput;
   projectSettings: ProjectSettings;
   url: UrlWithStringQuery;
   inputOptions: InputOptions;
@@ -31,14 +40,14 @@ export class UsageData implements IUsageData {
   codePathTimers = new Map<TimedCodePath, Timer>();
   codePathDurations = new Map<TimedCodePath, number>();
   flow: CLIFlowReport = new CLIFlowReport();
-
+  pushNormalizationFactor = 1;
   private static instance: UsageData;
 
   private constructor() {
     this.sessionUuid = uuid();
     this.url = getUrl();
-    this.input = new Input([]);
-    this.projectSettings = {};
+    this.input = new CLIInput([]);
+    this.projectSettings = {} as unknown as ProjectSettings;
     this.inputOptions = {};
   }
 
@@ -48,7 +57,7 @@ export class UsageData implements IUsageData {
   init(
     installationUuid: string,
     version: string,
-    input: Input,
+    input: CLIInput,
     accountId: string,
     projectSettings: ProjectSettings,
     processStartTimeStamp: number,
@@ -73,6 +82,13 @@ export class UsageData implements IUsageData {
       UsageData.instance = new UsageData();
     }
     return UsageData.instance;
+  }
+
+  /**
+   * returns current sessionUuid
+   */
+  getSessionUuid(): string {
+    return this.sessionUuid;
   }
 
   /**
@@ -101,9 +117,10 @@ export class UsageData implements IUsageData {
    */
   startCodePathTimer(codePath: StartableTimedCodePath): void {
     if (this.codePathTimers.has(codePath)) {
-      throw new Error(`${codePath} already has a running timer`);
+      printer.debug(`${codePath} already has a running timer`);
+    } else {
+      this.codePathTimers.set(codePath, Timer.start());
     }
-    this.codePathTimers.set(codePath, Timer.start());
   }
 
   /**
@@ -113,22 +130,21 @@ export class UsageData implements IUsageData {
     this.internalStopCodePathTimer(codePath);
   }
 
-
   /**
    * Set context is in headless mode
    * @param isHeadless - when set to true assumes context in headless
    */
-  setIsHeadless(isHeadless: boolean) {
-      this.flow.setIsHeadless(isHeadless);
+  setIsHeadless(isHeadless: boolean): void {
+    this.flow.setIsHeadless(isHeadless);
   }
 
   /**
-    * Append record to non-interactive Flow data
-    * @param headlessParameterString - Stringified headless parameter string
-    * @param input  - CLI input entered by Cx
-    */
-  pushHeadlessFlow(headlessParameterString: string, input: ICommandInput) {
-      this.flow.pushHeadlessFlow(headlessParameterString, input);
+   * Append record to non-interactive Flow data
+   * @param headlessParameterString - Stringified headless parameter string
+   * @param input  - CLI input entered by Cx
+   */
+  pushHeadlessFlow(headlessParameterString: string, input: ICommandInput): void {
+    this.flow.pushHeadlessFlow(headlessParameterString, input);
   }
 
   /**
@@ -137,21 +153,43 @@ export class UsageData implements IUsageData {
    * @param input  - CLI input entered by Cx
    */
   pushInteractiveFlow(prompt: string, input: unknown): void {
-      this.flow.pushInteractiveFlow(prompt, input);
+    this.flow.pushInteractiveFlow(prompt, input);
   }
 
   /**
    * Get the JSON version of the Flow Report.
    */
   getFlowReport(): IFlowReport {
-      return this.flow.getFlowReport();
+    return this.flow.getFlowReport();
   }
 
   /**
    * Generate a unique searchable
    */
   assignProjectIdentifier(): string | undefined {
-      return this.flow.assignProjectIdentifier();
+    return this.flow.assignProjectIdentifier();
+  }
+
+  /**
+   * Calculates all the leaves that were updated
+   * @param events CloudFormation Stack Events
+   */
+  calculatePushNormalizationFactor(events: { StackId: string; PhysicalResourceId: string }[], StackId: string): void {
+    const cfnStackStack = [StackId];
+    let count = 0;
+    while (cfnStackStack.length !== 0) {
+      const head = cfnStackStack.pop();
+      const children = events
+        .filter((r) => r.StackId === head && r.PhysicalResourceId !== head)
+        .map((r) => r.PhysicalResourceId)
+        .reduce((set, val) => set.add(val), new Set<string>());
+      if (children.size > 0) {
+        cfnStackStack.push(...children.values());
+      } else {
+        count++;
+      }
+    }
+    this.pushNormalizationFactor = count;
   }
 
   private internalStopCodePathTimer = (codePath: TimedCodePath): void => {
@@ -161,11 +199,15 @@ export class UsageData implements IUsageData {
     }
     this.codePathDurations.set(codePath, timer.stop());
     this.codePathTimers.delete(codePath);
-  }
+  };
 
   private async emit(error: Error | null, state: string): Promise<UsageDataPayload> {
     // initialize the unique project identifier if work space is initialized
     this.flow.assignProjectIdentifier();
+
+    // add prompt time
+    this.codePathDurations.set(ManuallyTimedCodePath.PROMPT_TIME, prompter.getTotalPromptElapsedTime());
+
     // stop all currently running timers
     Array.from(this.codePathTimers.keys()).forEach(this.internalStopCodePathTimer);
 
@@ -182,18 +224,36 @@ export class UsageData implements IUsageData {
       Object.fromEntries(this.codePathDurations),
       this.flow.getFlowReport() as IFlowReport,
     );
-
+    payload.pushNormalizationFactor = this.pushNormalizationFactor;
     await this.send(payload);
 
     return payload;
   }
 
+  /**
+   * get usage data partial payload to use in reporter
+   */
+  getUsageDataPayload(error: Error | null, state: string): IUsageDataPayload {
+    return new UsageDataPayload(
+      this.sessionUuid,
+      this.installationUuid,
+      this.version,
+      this.input,
+      error,
+      state,
+      this.accountId,
+      this.projectSettings,
+      this.inputOptions,
+      Object.fromEntries(this.codePathDurations),
+      this.flow.getFlowReport() as IFlowReport,
+    );
+  }
 
   private async send(payload: UsageDataPayload): Promise<void> {
-    return new Promise<void>(resolve => {
+    return new Promise<void>((resolve) => {
       const data: string = JSONUtilities.stringify(payload, {
         minify: true,
-      })!;
+      }) as string;
       const req = https.request({
         hostname: this.url.hostname,
         port: this.url.port,
@@ -204,7 +264,9 @@ export class UsageData implements IUsageData {
           'content-length': data.length,
         },
       });
-      req.on('error', () => { /* noop */ });
+      req.on('error', () => {
+        /* noop */
+      });
       req.setTimeout(this.requestTimeout, () => {
         resolve();
       });
@@ -217,7 +279,7 @@ export class UsageData implements IUsageData {
 }
 
 enum WorkflowState {
-  SUCCESSFUL = 'SUCCEEDED',
   ABORTED = 'ABORTED',
   FAILED = 'FAILED',
+  SUCCESSFUL = 'SUCCEEDED',
 }

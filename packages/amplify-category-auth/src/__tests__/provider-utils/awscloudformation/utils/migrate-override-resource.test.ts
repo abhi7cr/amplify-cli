@@ -1,12 +1,12 @@
-import { JSONUtilities } from 'amplify-cli-core';
+import { JSONUtilities } from '@aws-amplify/amplify-cli-core';
 import { migrateResourceToSupportOverride } from '../../../../provider-utils/awscloudformation/utils/migrate-override-resource';
 import * as path from 'path';
 
-jest.mock('amplify-prompts');
+jest.mock('@aws-amplify/amplify-prompts');
 jest.mock('fs-extra');
 
-jest.mock('amplify-cli-core', () => ({
-  ...(jest.requireActual('amplify-cli-core') as {}),
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
+  ...(jest.requireActual('@aws-amplify/amplify-cli-core') as {}),
   pathManager: {
     findProjectRoot: jest.fn().mockReturnValue('somePath'),
     getBackendDirPath: jest.fn().mockReturnValue('mockProjectPath'),
@@ -83,7 +83,7 @@ jest.mock('amplify-cli-core', () => ({
 }));
 test('migrate resource', async () => {
   const resourceName = 'mockResource';
-  migrateResourceToSupportOverride(resourceName);
+  await migrateResourceToSupportOverride(resourceName);
   const expectedPath = path.join('mockProjectPath', 'cli-inputs.json');
   const expectedPayload = {
     version: '1',

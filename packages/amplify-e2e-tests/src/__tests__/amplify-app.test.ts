@@ -1,20 +1,11 @@
-import {
-  amplifyAppAndroid,
-  amplifyAppIos,
-  amplifyAppAngular,
-  amplifyAppReact,
-  amplifyModelgen,
-  amplifyPush,
-  addIntegAccountInConfig,
-} from '../amplify-app-helpers/amplify-app-setup';
-import { createNewProjectDir, deleteProject, deleteProjectDir, isCI } from 'amplify-e2e-core';
+import { amplifyAppAndroid, amplifyAppIos, amplifyAppAngular } from '../amplify-app-helpers/amplify-app-setup';
+import { createNewProjectDir, deleteProjectDir, isCI } from '@aws-amplify/amplify-e2e-core';
+import { AmplifyFrontend } from '@aws-amplify/amplify-cli-core';
 import {
   validateProject,
   validateProjectConfig,
   validateApi,
   validateBackendConfig,
-  validateModelgen,
-  validateAmplifyPush,
   validateFeatureFlags,
 } from '../amplify-app-helpers/amplify-app-validation';
 
@@ -29,12 +20,12 @@ describe('amplify-app platform tests', () => {
     deleteProjectDir(projRoot);
   });
 
-  jest.setTimeout(1000 * 60 * 30); // 30 minutes is suffice as push operations are taking time
+  jest.setTimeout(1000 * 60 * 30); // 30 minutes is enough as push operations are taking time
 
   it('should set up an android project', async () => {
     await amplifyAppAndroid(projRoot);
-    validateProject(projRoot, 'android');
-    validateProjectConfig(projRoot, 'android');
+    validateProject(projRoot, AmplifyFrontend.android);
+    validateProjectConfig(projRoot, AmplifyFrontend.android);
     validateApi(projRoot);
     validateBackendConfig(projRoot);
     validateFeatureFlags(projRoot);
@@ -48,8 +39,8 @@ describe('amplify-app platform tests', () => {
       return;
     }
     await amplifyAppIos(projRoot);
-    validateProject(projRoot, 'ios');
-    validateProjectConfig(projRoot, 'ios');
+    validateProject(projRoot, AmplifyFrontend.ios);
+    validateProjectConfig(projRoot, AmplifyFrontend.ios);
     validateApi(projRoot);
     validateBackendConfig(projRoot);
     validateFeatureFlags(projRoot);
@@ -57,25 +48,10 @@ describe('amplify-app platform tests', () => {
 
   it('should set up a angular project', async () => {
     await amplifyAppAngular(projRoot);
-    validateProject(projRoot, 'javascript');
-    validateProjectConfig(projRoot, 'javascript', 'angular');
+    validateProject(projRoot, AmplifyFrontend.javascript);
+    validateProjectConfig(projRoot, AmplifyFrontend.javascript, 'angular');
     validateApi(projRoot);
     validateBackendConfig(projRoot);
     validateFeatureFlags(projRoot);
-  });
-
-  it('should set up a react project and run scripts', async () => {
-    await amplifyAppReact(projRoot);
-    validateProject(projRoot, 'javascript');
-    validateProjectConfig(projRoot, 'javascript', 'react');
-    validateApi(projRoot);
-    validateBackendConfig(projRoot);
-    validateFeatureFlags(projRoot);
-    addIntegAccountInConfig(projRoot);
-    await amplifyModelgen(projRoot);
-    validateModelgen(projRoot);
-    await amplifyPush(projRoot);
-    validateAmplifyPush(projRoot);
-    await deleteProject(projRoot);
   });
 });

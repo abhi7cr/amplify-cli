@@ -1,9 +1,9 @@
-import { AmplifyAuthTransform } from '../../../../provider-utils/awscloudformation/auth-stack-builder';
-import { $TSContext } from 'amplify-cli-core';
+import { $TSContext } from '@aws-amplify/amplify-cli-core';
 import process from 'process';
+import { AmplifyAuthTransform } from '../../../../provider-utils/awscloudformation/auth-stack-builder';
 
-jest.mock('amplify-cli-core', () => ({
-  ...(jest.requireActual('amplify-cli-core') as {}),
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
+  ...(jest.requireActual('@aws-amplify/amplify-cli-core') as {}),
   stateManager: {
     getLocalEnvInfo: jest.fn().mockReturnValue('testenv'),
     getMeta: jest.fn().mockReturnValue({
@@ -18,6 +18,8 @@ jest.mock('amplify-cli-core', () => ({
   JSONUtilities: {
     writeJson: jest.fn(),
     readJson: jest.fn(),
+    stringify: jest.fn().mockImplementation(JSON.stringify),
+    parse: jest.fn().mockImplementation(JSON.parse),
   },
   FeatureFlags: {
     getBoolean: jest.fn().mockReturnValue(true),
@@ -165,16 +167,12 @@ const getCLIInputPayload_mock = jest.fn().mockReturnValueOnce(inputPayload1).moc
 
 const isCLIInputsValid_mock = jest.fn().mockReturnValue('true');
 
-jest.mock('../../../../provider-utils/awscloudformation/auth-inputs-manager/auth-input-state.ts', () => {
-  return {
-    AuthInputState: jest.fn().mockImplementation(() => {
-      return {
-        getCLIInputPayload: getCLIInputPayload_mock,
-        isCLIInputsValid: isCLIInputsValid_mock,
-      };
-    }),
-  };
-});
+jest.mock('../../../../provider-utils/awscloudformation/auth-inputs-manager/auth-input-state.ts', () => ({
+  AuthInputState: jest.fn().mockImplementation(() => ({
+    getCLIInputPayload: getCLIInputPayload_mock,
+    isCLIInputsValid: isCLIInputsValid_mock,
+  })),
+}));
 
 const mockPolicy1 = {
   policyName: 'AddToGroupCognito',
@@ -255,7 +253,11 @@ describe('Check Auth Template', () => {
   it('should validate cfn parameters if match', () => {
     const resourceName = 'mockResource';
     const authTransform = new AmplifyAuthTransform(resourceName);
-    const isValid = authTransform.validateCfnParameters(context_stub_typed, { requiredAttributes: ['email'] }, { requiredAttributes: ['email'] });
+    const isValid = authTransform.validateCfnParameters(
+      context_stub_typed,
+      { requiredAttributes: ['email'] },
+      { requiredAttributes: ['email'] },
+    );
     expect(isValid).toBe(true);
   });
 
@@ -264,7 +266,67 @@ describe('Check Auth Template', () => {
     process.exit = jest.fn();
     const resourceName = 'mockResource';
     const authTransform = new AmplifyAuthTransform(resourceName);
-    authTransform.validateCfnParameters(context_stub_typed, { requiredAttributes: ['email'] }, { requiredAttributes: ['email', 'phone_number'] });
+    authTransform.validateCfnParameters(
+      context_stub_typed,
+      { requiredAttributes: ['email'] },
+      { requiredAttributes: ['email', 'phone_number'] },
+    );
     expect(process.exit).toBeCalledTimes(1);
+  });
+
+  it('should include oauth settings in cfn when enabled oauth', async () => {
+    getCLIInputPayload_mock.mockReset();
+    getCLIInputPayload_mock.mockReturnValue({
+      cognitoConfig: {
+        ...inputPayload1.cognitoConfig,
+        oAuthMetadata:
+          '{"AllowedOAuthFlows":["code"],"AllowedOAuthScopes":["phone","email","openid","profile","aws.cognito.signin.user.admin"],"CallbackURLs":["https://localhost:3000/"]}',
+      },
+    });
+
+    const resourceName = 'mockResource';
+    const authTransform = new AmplifyAuthTransform(resourceName);
+    const mock_template = await authTransform.transform(context_stub_typed);
+    expect(mock_template.Resources?.UserPoolClient.Properties.AllowedOAuthFlows).toMatchInlineSnapshot(`
+      [
+        "code",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClient.Properties.AllowedOAuthScopes).toMatchInlineSnapshot(`
+      [
+        "phone",
+        "email",
+        "openid",
+        "profile",
+        "aws.cognito.signin.user.admin",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClient.Properties.CallbackURLs).toMatchInlineSnapshot(`
+      [
+        "https://localhost:3000/",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClient.Properties.LogoutURLs).toMatchInlineSnapshot(`undefined`);
+
+    expect(mock_template.Resources?.UserPoolClientWeb.Properties.AllowedOAuthFlows).toMatchInlineSnapshot(`
+      [
+        "code",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClientWeb.Properties.AllowedOAuthScopes).toMatchInlineSnapshot(`
+      [
+        "phone",
+        "email",
+        "openid",
+        "profile",
+        "aws.cognito.signin.user.admin",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClientWeb.Properties.CallbackURLs).toMatchInlineSnapshot(`
+      [
+        "https://localhost:3000/",
+      ]
+    `);
+    expect(mock_template.Resources?.UserPoolClientWeb.Properties.LogoutURLs).toMatchInlineSnapshot(`undefined`);
   });
 });

@@ -1,4 +1,9 @@
-function generateStorageCFNForLambda(storageCFNFile, functionName, prefixForAdminTrigger) {
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+/* eslint-disable no-param-reassign */
+/**
+ * Adds S3 config to storageCFNFile
+ */
+const generateStorageCFNForLambda = (storageCFNFile, functionName, prefixForAdminTrigger) => {
   // Add reference for the new triggerFunction
   storageCFNFile.Parameters[`function${functionName}Arn`] = {
     Type: 'String',
@@ -143,9 +148,12 @@ function generateStorageCFNForLambda(storageCFNFile, functionName, prefixForAdmi
   };
 
   return storageCFNFile;
-}
+};
 
-function generateStorageCFNForAdditionalLambda(storageCFNFile, functionName, prefixForAdminTrigger) {
+/**
+ * Adds S3 configuration for lambda access
+ */
+const generateStorageCFNForAdditionalLambda = (storageCFNFile, functionName, prefixForAdminTrigger) => {
   storageCFNFile.Parameters[`function${functionName}Arn`] = {
     Type: 'String',
     Default: `function${functionName}Arn`,
@@ -174,7 +182,7 @@ function generateStorageCFNForAdditionalLambda(storageCFNFile, functionName, pre
   // Modify existing notification configuration here//
 
   const lambdaConfigurations = [];
-  storageCFNFile.Resources.S3Bucket.Properties.NotificationConfiguration.LambdaConfigurations.forEach(triggers => {
+  storageCFNFile.Resources.S3Bucket.Properties.NotificationConfiguration.LambdaConfigurations.forEach((triggers) => {
     if (!triggers.Filter) {
       lambdaConfigurations.push(
         addObjectKeys(triggers, {
@@ -339,9 +347,12 @@ function generateStorageCFNForAdditionalLambda(storageCFNFile, functionName, pre
   });
 
   return storageCFNFile;
-}
+};
 
-function generateLambdaAccessForRekognition(identifyCFNFile, functionName, s3ResourceName) {
+/**
+ * Adds resources to identifyCFNFile for lambda access to rekognition
+ */
+const generateLambdaAccessForRekognition = (identifyCFNFile, functionName, s3ResourceName) => {
   identifyCFNFile.Parameters[`function${functionName}Arn`] = {
     Type: 'String',
     Default: `function${functionName}Arn`,
@@ -458,76 +469,72 @@ function generateLambdaAccessForRekognition(identifyCFNFile, functionName, s3Res
             '\n',
             [
               "const response = require('cfn-response');",
-              "const aws = require('aws-sdk');",
+              "const { RekognitionClient, CreateCollectionCommand, DeleteCollectionCommand, ListCollectionsCommand } = require('@aws-sdk/client-rekognition');",
+              "const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');",
               'let responseData = {};',
               'exports.handler = function(event, context) {',
-              '  try {',
-              "    if (event.RequestType == 'Delete') {",
-              '        let params = {',
-              '           CollectionId: event.ResourceProperties.collectionId',
-              '        };',
-              "        const rekognition = new aws.Rekognition({ apiVersion: '2016-06-27', region: event.ResourceProperties.region });",
-              '        rekognition.deleteCollection(params).promise()',
-              '        .then((res) => {',
-              '        console.log("delete" + res);',
-              '        console.log("response data" + JSON.stringify(res));',
-              '        response.send(event, context, response.SUCCESS, res);',
-              '     }).catch(err => {',
-              '        if (err.code !== \'ParameterNotFound\') {',
-              '          response.send(event, context, response.FAILED);',
-              '        } else {',
-              '          response.send(event, context, response.SUCCESS);',
-              '        }',
-              '     });',
-              '    }',
-              "    if (event.RequestType == 'Update' || event.RequestType == 'Create') {",
-              '       const collectionId = event.ResourceProperties.collectionId;',
-              '       const params = {',
-              '          CollectionId: collectionId',
-              '       };',
-              "       const rekognition = new aws.Rekognition({ apiVersion: '2016-06-27', region: event.ResourceProperties.region });",
-              '       rekognition.listCollections({}).promise()',
-              '       .then((res) => {',
-              '       let {CollectionIds} = res;',
-              '       console.log("CollectionIds" + CollectionIds);',
-              '       if(CollectionIds.indexOf(collectionId) !== -1) {',
-              '         response.send(event, context, response.SUCCESS, responseData);',
-              '       } else {',
-              '           rekognition.createCollection(params).promise()',
-              '           .then((res1) => {',
-              '           responseData = res1;',
-              '           console.log("responseData" + JSON.stringify(responseData)); console.log(collectionId);',
-              '           let s3 = new aws.S3();',
-              '           let params = {',
-              '           Bucket: event.ResourceProperties.bucketName,',
-              '           Key: "protected/predictions/index-faces/admin/"',
-              '           };',
-              '           s3.putObject(params).promise()',
-              '           .then((s3Res) => {',
-              '           if (s3Res.ETag) {',
-              '              response.send(event, context, response.SUCCESS, responseData);',
-              '           }',
-              '           else {',
-              '               response.send(event, context, response.FAILED, s3Res);',
-              '           }',
-              '           });',
-              '       });',
-              '    }',
-              '    });',
-              '    }',
-              '  } catch(err) {',
-              '       console.log(err.stack);',
-              '       responseData = {Error: err};',
-              '       response.send(event, context, response.FAILED, responseData);',
-              '       throw err;',
-              '  }',
+              "    // Don't return promise, response.send() marks context as done internally",
+              '    const ignoredPromise = handleEvent(event, context)',
               '};',
+              'async function handleEvent(event, context) {',
+              '    try {',
+              "        if (event.RequestType === 'Delete') {",
+              '            try {',
+              '                let params = {',
+              '                    CollectionId: event.ResourceProperties.collectionId',
+              '                };',
+              '                const rekognition = new RekognitionClient({ region: event.ResourceProperties.region });',
+              '                const res = await rekognition.send(new DeleteCollectionCommand(params));',
+              '                console.log("delete" + res);',
+              '                console.log("response data" + JSON.stringify(res));',
+              '                response.send(event, context, response.SUCCESS, res);',
+              '            } catch(err) {',
+              "                if (err.name !== 'NotFoundException') {",
+              '                    response.send(event, context, response.FAILED);',
+              '                } else {',
+              '                    response.send(event, context, response.SUCCESS);',
+              '                }',
+              '            }',
+              "        } else if (event.RequestType === 'Update' || event.RequestType === 'Create') {",
+              '            const collectionId = event.ResourceProperties.collectionId;',
+              '            const params = {',
+              '                CollectionId: collectionId',
+              '            };',
+              '            const rekognition = new RekognitionClient({ region: event.ResourceProperties.region });',
+              '            const res = await rekognition.send(new ListCollectionsCommand({}));',
+              '            let CollectionIds = res.CollectionIds ?? [];',
+              '            console.log("CollectionIds" + CollectionIds);',
+              '            if(CollectionIds.indexOf(collectionId) !== -1) {',
+              '                response.send(event, context, response.SUCCESS, responseData);',
+              '            } else {',
+              '                responseData = await rekognition.send(new CreateCollectionCommand(params));',
+              '                console.log("responseData" + JSON.stringify(responseData)); console.log(collectionId);',
+              '                let s3 = new S3Client({});',
+              '                let s3params = {',
+              '                    Bucket: event.ResourceProperties.bucketName,',
+              '                    Key: "protected/predictions/index-faces/admin/"',
+              '                };',
+              '                const s3Res = await s3.send(new PutObjectCommand(s3params));',
+              '                if (s3Res.ETag) {',
+              '                    response.send(event, context, response.SUCCESS, responseData);',
+              '                }',
+              '                else {',
+              '                    response.send(event, context, response.FAILED, s3Res);',
+              '                }',
+              '            }',
+              '        }',
+              '    } catch(err) {',
+              '        console.log(err.stack);',
+              '        responseData = {Error: err};',
+              '        response.send(event, context, response.FAILED, responseData);',
+              '    }',
+              '}',
             ],
           ],
         },
       },
       Handler: 'index.handler',
-      Runtime: 'nodejs14.x',
+      Runtime: 'nodejs18.x',
       Timeout: 300,
       Role: {
         'Fn::GetAtt': ['CollectionsLambdaExecutionRole', 'Arn'],
@@ -572,6 +579,37 @@ function generateLambdaAccessForRekognition(identifyCFNFile, functionName, s3Res
     },
   };
 
+  identifyCFNFile.Resources.LambdaCloudWatchPolicy = {
+    Type: 'AWS::IAM::Policy',
+    Properties: {
+      PolicyName: 'CollectionsLambdaCloudWatchPolicy',
+      Roles: [
+        {
+          Ref: 'CollectionsLambdaExecutionRole',
+        },
+      ],
+      PolicyDocument: {
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+            Resource: {
+              'Fn::Sub': [
+                'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${lambdaName}:log-stream:*',
+                {
+                  lambdaName: {
+                    Ref: 'CollectionCreationFunction',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  };
+
   identifyCFNFile.Resources.CollectionsLambdaExecutionRole = {
     Type: 'AWS::IAM::Role',
     Properties: {
@@ -610,21 +648,6 @@ function generateLambdaAccessForRekognition(identifyCFNFile, functionName, s3Res
         ],
       },
       Policies: [
-        {
-          PolicyName: {
-            Ref: 'resourceName',
-          },
-          PolicyDocument: {
-            Version: '2012-10-17',
-            Statement: [
-              {
-                Effect: 'Allow',
-                Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-                Resource: 'arn:aws:logs:*:*:*',
-              },
-            ],
-          },
-        },
         {
           PolicyName: {
             Ref: 'identifyPolicyName',
@@ -698,14 +721,18 @@ function generateLambdaAccessForRekognition(identifyCFNFile, functionName, s3Res
   };
 
   return identifyCFNFile;
-}
+};
 
-function generateStorageAccessForRekognition(identifyCFNFile, s3ResourceName, prefixForAdminTrigger) {
+/**
+ * Attaches resources to rekognition s3 access to identifyCFNFile
+ */
+const generateStorageAccessForRekognition = (identifyCFNFile, s3ResourceName, prefixForAdminTrigger) => {
   identifyCFNFile.Parameters[`storage${s3ResourceName}BucketName`] = {
     Type: 'String',
     Default: `storage${s3ResourceName}BucketName`,
   };
 
+  // eslint-disable-next-line spellcheck/spell-checker
   identifyCFNFile.Resources.S3AuthPredicitionsAdminProtectedPolicy = {
     Condition: 'CreateAdminAuthProtected',
     Type: 'AWS::IAM::Policy',
@@ -799,6 +826,7 @@ function generateStorageAccessForRekognition(identifyCFNFile, s3ResourceName, pr
       },
     },
   };
+  // eslint-disable-next-line spellcheck/spell-checker
   identifyCFNFile.Resources.S3GuestPredicitionsAdminPublicPolicy = {
     Condition: 'CreateAdminGuestProtected',
     Type: 'AWS::IAM::Policy',
@@ -837,13 +865,14 @@ function generateStorageAccessForRekognition(identifyCFNFile, s3ResourceName, pr
   };
 
   return identifyCFNFile;
-}
+};
 
-function addObjectKeys(original, additional) {
-  return { ...original, ...additional };
-}
+const addObjectKeys = (original, additional) => ({ ...original, ...additional });
 
-function addTextractPolicies(identifyCFNFile) {
+/**
+ * Sets rekognition + textract policies
+ */
+const addTextractPolicies = (identifyCFNFile) => {
   identifyCFNFile.Resources.IdentifyTextPolicy.Properties.PolicyDocument.Statement[0].Action = [
     'rekognition:DetectText',
     'rekognition:DetectLabel',
@@ -853,15 +882,18 @@ function addTextractPolicies(identifyCFNFile) {
     'textract:StartDocumentTextDetection',
   ];
   return JSON.stringify(identifyCFNFile, null, 4);
-}
+};
 
-function removeTextractPolicies(identifyCFNFile) {
+/**
+ * Sets only rekognition policies
+ */
+const removeTextractPolicies = (identifyCFNFile) => {
   identifyCFNFile.Resources.IdentifyTextPolicy.Properties.PolicyDocument.Statement[0].Action = [
     'rekognition:DetectText',
     'rekognition:DetectLabel',
   ];
   return JSON.stringify(identifyCFNFile, null, 4);
-}
+};
 
 module.exports = {
   generateStorageAccessForRekognition,

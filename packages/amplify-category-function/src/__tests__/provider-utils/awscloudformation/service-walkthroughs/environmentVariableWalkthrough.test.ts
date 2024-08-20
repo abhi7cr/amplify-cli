@@ -1,19 +1,14 @@
-import { $TSContext } from 'amplify-cli-core';
 import { askEnvironmentVariableQuestions } from '../../../../provider-utils/awscloudformation/service-walkthroughs/environmentVariableWalkthrough';
 
-jest.mock('inquirer', () => {
-  return {
-    prompt: () => {
-      return new Promise(resolve => resolve({ operation: 'abort' }));
-    },
-  };
-});
+jest.mock('../../../../provider-utils/awscloudformation/secrets/functionSecretsStateManager');
 
-jest.mock('../../../../provider-utils/awscloudformation/utils/environmentVariablesHelper', () => ({
-  getStoredEnvironmentVariables: jest.fn().mockReturnValue({}),
+jest.mock('inquirer', () => ({
+  prompt: () => new Promise((resolve) => resolve({ operation: 'abort' })),
 }));
 
-const context_stub = {} as $TSContext;
+jest.mock('../../../../provider-utils/awscloudformation/utils/environmentVariablesHelper', () => ({
+  getStoredEnvironmentVariables: jest.fn().mockResolvedValue({}),
+}));
 
 describe('askEnvironmentVariableQuestions', () => {
   it('does not throw error', () => {

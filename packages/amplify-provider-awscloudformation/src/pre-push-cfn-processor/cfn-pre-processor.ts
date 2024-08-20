@@ -1,4 +1,4 @@
-import { pathManager, readCFNTemplate, writeCFNTemplate, generateCustomPoliciesInTemplate } from 'amplify-cli-core';
+import { pathManager, readCFNTemplate, writeCFNTemplate, generateCustomPoliciesInTemplate } from '@aws-amplify/amplify-cli-core';
 import * as path from 'path';
 import { ProviderName as providerName } from '../constants';
 import { prePushCfnTemplateModifier } from './pre-push-cfn-modifier';
@@ -12,7 +12,7 @@ const buildDir = 'build';
  * @param filePath the original template path
  * @returns The file path of the modified template
  */
-export async function preProcessCFNTemplate(filePath: string): Promise<string> {
+export const preProcessCFNTemplate = async (filePath: string, options?: { minify?: boolean }): Promise<string> => {
   const { templateFormat, cfnTemplate } = readCFNTemplate(filePath);
 
   await prePushCfnTemplateModifier(cfnTemplate);
@@ -20,12 +20,25 @@ export async function preProcessCFNTemplate(filePath: string): Promise<string> {
   const pathSuffix = filePath.startsWith(backendDir) ? filePath.slice(backendDir.length) : path.parse(filePath).base;
   const newPath = path.join(backendDir, providerName, buildDir, pathSuffix);
 
-  await writeCFNTemplate(cfnTemplate, newPath, { templateFormat });
+  await writeCFNTemplate(cfnTemplate, newPath, { templateFormat, minify: options?.minify });
   return newPath;
-}
+};
 
-//get data from custom polcies file and write custom policies to CFN template
-export async function writeCustomPoliciesToCFNTemplate(resourceName: string, service: string, cfnFile: string, category: string) {
+/**
+ *  get data from custom policies file and write custom policies to CFN template
+ * @param resourceName name of the resource
+ * @param service service name of the resource
+ * @param cfnFile the file path
+ * @param category name of the category
+ * @returns void
+ */
+export const writeCustomPoliciesToCFNTemplate = async (
+  resourceName: string,
+  service: string,
+  cfnFile: string,
+  category: string,
+  options?: { minify?: boolean },
+): Promise<void> => {
   if (!(category === 'api' && service === 'ElasticContainer') && !(category === 'function' && service === 'Lambda')) {
     return;
   }
@@ -34,5 +47,5 @@ export async function writeCustomPoliciesToCFNTemplate(resourceName: string, ser
   const cfnPath = path.join(resourceDir, cfnFile);
   const { templateFormat, cfnTemplate } = readCFNTemplate(cfnPath);
   const newCfnTemplate = generateCustomPoliciesInTemplate(cfnTemplate, resourceName, service, category);
-  await writeCFNTemplate(newCfnTemplate, cfnPath, { templateFormat });
-}
+  await writeCFNTemplate(newCfnTemplate, cfnPath, { templateFormat, minify: options?.minify });
+};

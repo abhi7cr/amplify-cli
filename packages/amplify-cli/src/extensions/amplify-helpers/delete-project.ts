@@ -1,13 +1,21 @@
+/* eslint-disable import/no-dynamic-require */
+/* eslint-disable global-require */
+/* eslint-disable @typescript-eslint/no-var-requires */
 import ora from 'ora';
 import chalk from 'chalk';
-import { FeatureFlags } from 'amplify-cli-core';
+import { FeatureFlags, $TSContext, AmplifyFault } from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import { removeEnvFromCloud } from './remove-env-from-cloud';
 import { getFrontendPlugins } from './get-frontend-plugins';
 import { getPluginInstance } from './get-plugin-instance';
 import { getAmplifyAppId } from './get-amplify-appId';
 import { getAmplifyDirPath } from './path-manager';
+import { invokeDeleteEnvParamsFromService } from '../../extensions/amplify-helpers/invoke-delete-env-params';
 
-export async function deleteProject(context) {
+/**
+ * Deletes the amplify project from the cloud and local machine
+ */
+export const deleteProject = async (context: $TSContext): Promise<void> => {
   const confirmation = await getConfirmation(context);
 
   if (confirmation.proceed) {
@@ -18,11 +26,11 @@ export async function deleteProject(context) {
       await FeatureFlags.removeFeatureFlagConfiguration(true, envNames);
     }
 
-    const spinner = ora('Deleting resources from the cloud. This may take a few minutes...');
+    const spinner = ora('Deleting resources from the cloud. This will take a few minutes.');
 
     try {
       spinner.start();
-      await Promise.all(Object.keys(allEnvs).map(env => removeEnvFromCloud(context, env, confirmation.deleteS3)));
+      await Promise.all(Object.keys(allEnvs).map((env) => removeEnvFromCloud(context, env, confirmation.deleteS3)));
       const appId = getAmplifyAppId();
       if (confirmation.deleteAmplifyApp && appId) {
         const awsCloudPlugin = getPluginInstance(context, 'awscloudformation');
@@ -31,51 +39,69 @@ export async function deleteProject(context) {
         if (environments.length === 0) {
           await amplifyClient.deleteApp({ appId }).promise();
         } else {
-          context.print.warning('Amplify App cannot be deleted, other environments still linked to Application');
+          printer.warn('Amplify App cannot be deleted, other environments still linked to Application');
         }
       }
+
+      // delete env parameters from service for each env
+      await Promise.all(envNames.map((envName) => invokeDeleteEnvParamsFromService(context, envName)));
+
       spinner.succeed('Project deleted in the cloud.');
-    } catch (ex: any) {
-      if (ex.code === 'NotFoundException') {
+    } catch (ex) {
+      if ('name' in ex && ex.name === 'BucketNotFoundError') {
         spinner.succeed('Project already deleted in the cloud.');
       } else {
         spinner.fail('Project delete failed.');
-        throw ex;
+        throw new AmplifyFault(
+          'BackendDeleteFault',
+          {
+            message: 'Project delete failed.',
+            details: ex.message,
+          },
+          ex,
+        );
       }
     }
     removeLocalAmplifyDir(context);
   }
-}
+};
 
-function removeLocalAmplifyDir(context) {
+const removeLocalAmplifyDir = (context: $TSContext): void => {
   const { frontend } = context.amplify.getProjectConfig();
   const frontendPlugins = getFrontendPlugins(context);
   const frontendPluginModule = require(frontendPlugins[frontend]);
 
   frontendPluginModule.deleteConfig(context);
   context.filesystem.remove(getAmplifyDirPath());
-  context.print.success('Project deleted locally.');
-}
+  printer.success('Project deleted locally.');
+};
 
-async function amplifyBackendEnvironments(client, appId) {
+const amplifyBackendEnvironments = async (client, appId): Promise<string[]> => {
   const data = await client
     .listBackendEnvironments({
       appId,
     })
     .promise();
   return data.backendEnvironments;
-}
+};
 
-export async function getConfirmation(context, env?) {
-  if (context.input.options && context.input.options.force)
+/**
+ * Get confirmation from the user to delete the project
+ */
+export const getConfirmation = async (
+  context: $TSContext,
+  env?: string,
+): Promise<{ proceed: boolean; deleteS3: boolean; deleteAmplifyApp: boolean }> => {
+  if (context.input.options && context.input.options.force) {
     return {
       proceed: true,
       deleteS3: true,
       deleteAmplifyApp: !process.env.CLI_DEV_INTERNAL_DISABLE_AMPLIFY_APP_DELETION,
     };
+  }
   const environmentText = env ? `'${env}' environment` : 'all the environments';
   return {
-    proceed: await context.amplify.confirmPrompt(
+    proceed: await prompter.yesOrNo(
       chalk.red(
         `Are you sure you want to continue? This CANNOT be undone. (This will delete ${environmentText} of the project from the cloud${
           env ? '' : ' and wipe out all the local files created by Amplify CLI'
@@ -87,4 +113,4 @@ export async function getConfirmation(context, env?) {
     deleteS3: true,
     deleteAmplifyApp: true,
   };
-}
+};

@@ -2,7 +2,7 @@
  * This module contains utility functions for dealing with the SecretDeltas object
  */
 
-import { removeSecret, retainSecret, SecretDelta, SecretDeltas } from 'amplify-function-plugin-interface';
+import { removeSecret, retainSecret, SecretDelta, SecretDeltas } from '@aws-amplify/amplify-function-plugin-interface';
 
 /**
  * Determines if the SecretDeltas have any existing secrets (aka they are not marked for removal)
@@ -15,7 +15,7 @@ export const hasExistingSecrets = (secretDeltas: SecretDeltas) =>
  */
 export const getExistingSecrets = (secretDeltas: SecretDeltas) =>
   Object.entries(secretDeltas)
-    .filter(([_, delta]) => existingSecretDeltaPredicate(delta))
+    .filter(([, delta]) => existingSecretDeltaPredicate(delta))
     .reduce((acc, [secretName, secretDelta]) => ({ ...acc, [secretName]: secretDelta }), {} as SecretDeltas);
 
 /**
@@ -28,6 +28,6 @@ export const secretNamesToSecretDeltas = (secretNames: string[], delta: SecretDe
  * Determines if the SecretDeltas have any "set" operations
  */
 export const hasSetSecrets = (secretDeltas: SecretDeltas) =>
-  Object.values(secretDeltas).filter(delta => delta.operation === 'set').length > 0;
+  Object.values(secretDeltas).filter((delta) => delta.operation === 'set').length > 0;
 
 const existingSecretDeltaPredicate = (secretDelta: SecretDelta) => secretDelta.operation !== removeSecret.operation;

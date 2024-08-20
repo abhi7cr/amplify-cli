@@ -8,16 +8,19 @@ import {
   stateManager,
   writeCFNTemplate,
   spinner,
-} from 'amplify-cli-core';
+  $TSAny,
+  ApiCategoryFacade,
+} from '@aws-amplify/amplify-cli-core';
 import _ from 'lodash';
+import { Fn, Template } from 'cloudform-types';
+import * as path from 'path';
 import { legacyLayerMigration, prePushLambdaLayerPrompt } from '../lambdaLayerInvocations';
+// eslint-disable-next-line import/no-cycle
 import { formNestedStack, getCfnFiles, updateStackForAPIMigration } from '../push-resources';
-import { transformGraphQLSchema } from '../graphql-transformer';
 import { ensureValidFunctionModelDependencies } from '../utils/remove-dependent-function';
 import { Constants } from './constants';
 import { consolidateApiGatewayPolicies } from '../utils/consolidate-apigw-policies';
 import { prePushAuthTransform } from '../auth-transform';
-import { Fn, Template } from 'cloudform-types';
 import { preProcessCFNTemplate, writeCustomPoliciesToCFNTemplate } from '../pre-push-cfn-processor/cfn-pre-processor';
 import {
   DeploymentResources,
@@ -29,12 +32,12 @@ import {
   UploadedResourceDefinition,
   TransformedCfnResource,
 } from './types';
-import * as path from 'path';
+// eslint-disable-next-line import/no-cycle
 import { prePushTemplateDescriptionHandler } from '../template-description-utils';
 
 /**
  * Abstract class that holds logic for building, packaging and cfn generation
- * The motive of this class is to be extended by any furture workflows that would require this
+ * The motive of this class is to be extended by any future workflows that would require this
  */
 export abstract class ResourcePackager {
   protected elasticContainerZipFiles: string[];
@@ -49,12 +52,12 @@ export abstract class ResourcePackager {
     resourcesToBeUpdated,
   }: DeploymentResources): ResourceDefinition[] =>
     !!this.context?.exeInfo?.forcePush || this.deployType === ResourceDeployType.Export
-      ? allResources.filter(resource => resource.category !== 'providers' && resource.providerPlugin === 'awscloudformation')
+      ? allResources.filter((resource) => resource.category !== 'providers' && resource.providerPlugin === 'awscloudformation')
       : resourcesToBeCreated.concat(resourcesToBeUpdated);
 
   constructor(context: $TSContext, deployType: ResourceDeployType) {
     this.context = context;
-    this.elasticContainerZipFiles = ['custom-resource-pipeline-awaiter.zip', 'codepipeline-action-buildspec-generator-lambda.zip'];
+    this.elasticContainerZipFiles = ['custom-resource-pipeline-awaiter-18.zip', 'codepipeline-action-buildspec-generator-lambda.zip'];
     const projectPath = pathManager.findProjectRoot();
     this.amplifyMeta = stateManager.getMeta(projectPath);
     this.amplifyTeamProviderInfo = stateManager.getTeamProviderInfo(projectPath);
@@ -66,26 +69,24 @@ export abstract class ResourcePackager {
    * Performs any filtering of resources that has to be deployed
    * 1. Filters dependent functions if @model{Table} is deleted
    * 2. Set the api resource 'lastPackageTimeStamp' as undefined
-   * @param deploymentResources of type {DeploymentResource}
-   * @returns {ResourceDefinition}
    */
   protected async filterResourcesToBeDeployed(deploymentResources: DeploymentResources): Promise<ResourceDefinition[]> {
     const resources = this.getResourcesToBeDeployed(deploymentResources);
     const { API_CATEGORY } = Constants;
 
-    const apiResourceTobeUpdated = this.filterResourceByCategoryService(
+    const apiResourceToBeUpdated = this.filterResourceByCategoryService(
       deploymentResources.resourcesToBeUpdated,
       API_CATEGORY.NAME,
       API_CATEGORY.SERVICE.APP_SYNC,
     );
-    if (apiResourceTobeUpdated.length) {
+    if (apiResourceToBeUpdated.length) {
       const functionResourceToBeUpdated = await ensureValidFunctionModelDependencies(
         this.context,
-        apiResourceTobeUpdated,
+        apiResourceToBeUpdated,
         deploymentResources.allResources as $TSObject[],
       );
       if (functionResourceToBeUpdated !== undefined && functionResourceToBeUpdated.length > 0) {
-        return _.uniqBy(resources.concat(functionResourceToBeUpdated.map(r => r as ResourceDefinition)), `resourceName`);
+        return _.uniqBy(resources.concat(functionResourceToBeUpdated.map((r) => r as ResourceDefinition)), 'resourceName');
       }
     }
 
@@ -95,8 +96,6 @@ export abstract class ResourcePackager {
   /**
    * This function is the step before packaging the non cloudformation resources
    * any changes to be made to the code or final changes are made here
-   * @param resources {ResourceDefinition[]}
-   * @returns {ResourceDefinition[]}
    */
   protected async preBuildResources(resources: ResourceDefinition[]): Promise<ResourceDefinition[]> {
     const { FUNCTION_CATEGORY } = Constants;
@@ -114,19 +113,18 @@ export abstract class ResourcePackager {
   }
 
   /**
-   * Builds all buildable resources and transforms the resources to include 'lastBuildTimeStamp'
-   * @param resources {ResourceDefinition[]}
-   * @returns {Promise<BuiltResourceDefinition[]>}
+   * Builds resources and transforms the resources to include 'lastBuildTimeStamp'
    */
   protected async buildResources(resources: ResourceDefinition[]): Promise<BuiltResourceDefinition[]> {
     const { FUNCTION_CATEGORY, API_CATEGORY } = Constants;
-    return await Promise.all(
+    return Promise.all(
       resources.map(async (resource): Promise<BuiltResourceDefinition> => {
         if (!resource.build) {
           return resource;
         }
         if (resource.category === API_CATEGORY.NAME && resource.service === API_CATEGORY.SERVICE.ELASTIC_CONTAINER) {
-          (resource as any).lastPackageTimeStamp = undefined;
+          // eslint-disable-next-line no-param-reassign
+          (resource as $TSAny).lastPackageTimeStamp = undefined;
         }
 
         const lastBuildTimeStamp: string | Date = await this.context.amplify.invokePluginMethod(
@@ -145,14 +143,14 @@ export abstract class ResourcePackager {
   }
 
   /**
-   * zips buildable project and saves it dist
+   * zips built project and saves it in dist
    * @param builtResources {BuiltResourceDefinition[]}
    * @returns resources with params for packaging {PackagedResourceDefinition[]}
    */
   protected async packageResources(builtResources: BuiltResourceDefinition[]): Promise<PackagedResourceDefinition[]> {
     const { FUNCTION_CATEGORY } = Constants;
-    return await Promise.all(
-      builtResources.map(async resource => {
+    return Promise.all(
+      builtResources.map(async (resource) => {
         if (!resource.build) {
           return resource;
         }
@@ -170,27 +168,24 @@ export abstract class ResourcePackager {
       }),
     );
   }
+
   /**
    * Changes that need to be made after packaging takes place
-   * @param pacakgedResources generated by {packageResource}
-   * @returns {PackagedResourceDefinition[]}
    */
-  protected async postPackageResource(pacakgedResources: PackagedResourceDefinition[]): Promise<PackagedResourceDefinition[]> {
+  protected async postPackageResource(packagedResources: PackagedResourceDefinition[]): Promise<PackagedResourceDefinition[]> {
     const { options } = this.context.parameters;
     const { API_CATEGORY } = Constants;
-    if (this.resourcesHasCategoryService(pacakgedResources, API_CATEGORY.NAME, API_CATEGORY.SERVICE.APP_SYNC)) {
-      await transformGraphQLSchema(this.context, {
-        handleMigration: opts => updateStackForAPIMigration(this.context, 'api', undefined, opts),
-        minify: options['minify'],
+    if (this.resourcesHasCategoryService(packagedResources, API_CATEGORY.NAME, API_CATEGORY.SERVICE.APP_SYNC)) {
+      await ApiCategoryFacade.transformGraphQLSchema(this.context, {
+        handleMigration: (opts) => updateStackForAPIMigration(this.context, 'api', undefined, opts),
+        minify: options.minify,
       });
     }
-    return pacakgedResources;
+    return packagedResources;
   }
 
   /**
    * Checks if the project has Containers API resource
-   * @param packagedResources
-   * @returns {boolean} true of false
    */
   protected resourcesHasContainers(packagedResources: PackagedResourceDefinition[]): boolean {
     const { API_CATEGORY, HOSTING_CATEGORY } = Constants;
@@ -202,17 +197,15 @@ export abstract class ResourcePackager {
 
   protected resourcesHasApiGatewaysButNotAdminQueries(packagedResources: PackagedResourceDefinition[]): boolean {
     const { API_CATEGORY } = Constants;
-    const resources = packagedResources.filter(r => r.resourceName !== 'AdminQueries');
+    const resources = packagedResources.filter((r) => r.resourceName !== 'AdminQueries');
     return this.resourcesHasCategoryService(resources, API_CATEGORY.NAME, API_CATEGORY.SERVICE.API_GATEWAY);
   }
 
   /**
    * Saves providerMetadata s3 information
-   * @param packagedResource
-   * @param bucketName
    */
   protected storeS3BucketInfo(packagedResource: PackagedResourceDefinition, bucketName: string): void {
-    if(!packagedResource.build){
+    if (!packagedResource.build) {
       return;
     }
     const s3Info = {
@@ -220,20 +213,19 @@ export abstract class ResourcePackager {
       s3Key: packagedResource.packagerParams.zipFilename,
     };
     const { CATEGORIES, S3_BUCKET } = Constants;
-    _.set(
+    _.setWith(
       this.amplifyTeamProviderInfo,
       [this.envInfo.envName, CATEGORIES, packagedResource.category, packagedResource.resourceName],
       s3Info,
     );
-    _.set(packagedResource, ['s3Bucket'], s3Info);
-    _.set(this.amplifyMeta, [packagedResource.category, packagedResource.resourceName, S3_BUCKET], s3Info);
+    _.setWith(packagedResource, ['s3Bucket'], s3Info);
+    _.setWith(this.amplifyMeta, [packagedResource.category, packagedResource.resourceName, S3_BUCKET], s3Info);
   }
 
   /**
    * generates CloudFormation at the path
-   * @param resources
    */
-  protected async generateCategoryCloudFormation(resources: UploadedResourceDefinition[] | PackagedResourceDefinition[]) {
+  protected async generateCategoryCloudFormation(resources: UploadedResourceDefinition[] | PackagedResourceDefinition[]): Promise<void> {
     if (this.resourcesHasApiGatewaysButNotAdminQueries(resources)) {
       const { PROVIDER, PROVIDER_NAME } = Constants;
       const { StackName: stackName } = this.amplifyMeta[PROVIDER][PROVIDER_NAME];
@@ -244,6 +236,7 @@ export abstract class ResourcePackager {
       await this.generateByCategoryService(resource);
     }
   }
+
   /**
    *  generate Cfn for the resources
    * @param resource {}
@@ -253,14 +246,14 @@ export abstract class ResourcePackager {
     switch (resource.category) {
       case API_CATEGORY.NAME:
         if (resource.service === API_CATEGORY.SERVICE.ELASTIC_CONTAINER) {
-          const { exposedContainer } = await this.context.amplify.invokePluginMethod(
+          const { exposedContainer }: $TSAny = await this.context.amplify.invokePluginMethod(
             this.context,
             'api',
             undefined,
             'generateContainersArtifacts',
             [this.context, resource],
           );
-          _.set(this.amplifyMeta, [resource.category, resource.resourceName, EXPOSED_CONTAINER], exposedContainer);
+          _.setWith(this.amplifyMeta, [resource.category, resource.resourceName, EXPOSED_CONTAINER], exposedContainer);
         }
         break;
 
@@ -276,10 +269,9 @@ export abstract class ResourcePackager {
         break;
     }
   }
+
   /**
    * Make modifications to the generated
-   * @param resources
-   * @returns
    */
   protected async postGenerateCategoryCloudFormation(resources: PackagedResourceDefinition[]): Promise<TransformedCfnResource[]> {
     const { API_CATEGORY, FUNCTION_CATEGORY } = Constants;
@@ -328,20 +320,21 @@ export abstract class ResourcePackager {
     return transformedCfnResources;
   }
 
+  // eslint-disable-next-line class-methods-use-this
   private getCfnTemplatePathsForResource(resource: ResourceDefinition): string[] {
-    const { cfnFiles } = getCfnFiles(resource.category, resource.resourceName, {
+    const { cfnFiles } = getCfnFiles(resource.category, resource.resourceName, false, {
       absolute: true,
     });
     return cfnFiles;
   }
 
   protected async generateRootStack(): Promise<Template> {
-    return await formNestedStack(this.context, { amplifyMeta: this.amplifyMeta }, undefined, undefined, undefined, undefined, true);
+    return formNestedStack(this.context, { amplifyMeta: this.amplifyMeta }, undefined, undefined, undefined, undefined, true);
   }
 
   private resourcesHasCategoryService = (resources: ResourceDefinition[], category: string, service?: string): boolean =>
-    resources.some(resource => resource.category === category && (service ? resource.service === service : true));
+    resources.some((resource) => resource.category === category && (service ? resource.service === service : true));
 
-  protected filterResourceByCategoryService = (resources: ResourceDefinition[], category: string, service?: string) =>
-    resources.filter(resource => resource.category === category && (service ? resource.service === service : true));
+  protected filterResourceByCategoryService = (resources: ResourceDefinition[], category: string, service?: string): ResourceDefinition[] =>
+    resources.filter((resource) => resource.category === category && (service ? resource.service === service : true));
 }

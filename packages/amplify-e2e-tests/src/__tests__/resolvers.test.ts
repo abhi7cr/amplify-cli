@@ -12,10 +12,9 @@ import {
   amplifyPushGraphQlWithCognitoPrompt,
   generateModels,
   amplifyPushUpdate,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { join } from 'path';
 import * as fs from 'fs-extra';
-import _ from 'lodash';
 
 describe('user created resolvers', () => {
   let projectDir: string;
@@ -39,12 +38,12 @@ describe('user created resolvers', () => {
 
       await addApiWithoutSchema(projectDir, { apiName });
       await updateApiSchema(projectDir, apiName, 'simple_model.graphql');
-      await apiGqlCompile(projectDir, true);
+      await apiGqlCompile(projectDir);
 
       expect(fs.readFileSync(generatedResolverPath).toString()).not.toEqual(resolver);
 
       addCustomResolver(projectDir, apiName, resolverName, resolver);
-      await apiGqlCompile(projectDir, true);
+      await apiGqlCompile(projectDir);
 
       expect(fs.readFileSync(generatedResolverPath).toString()).toEqual(resolver);
     });
@@ -81,22 +80,24 @@ describe('user created resolvers', () => {
       // 1. postAuth slot appsync functions should be same
       // 2. list resolver auth slot should be different
 
-      const filterFunctions = listResolverAppsyncFunctions.filter(func1 => getResolverAppsyncFunctions.some(func2 => func1['Fn::GetAtt'][0] === func2['Fn::GetAtt'][0]));
+      const filterFunctions = listResolverAppsyncFunctions.filter((func1) =>
+        getResolverAppsyncFunctions.some((func2) => func1['Fn::GetAtt'][0] === func2['Fn::GetAtt'][0]),
+      );
       expect(filterFunctions).toMatchInlineSnapshot(`
-        Array [
-          Object {
-            "Fn::GetAtt": Array [
+        [
+          {
+            "Fn::GetAtt": [
               "QuerygetTodopostAuth0FunctionQuerygetTodopostAuth0FunctionAppSyncFunction6BE14593",
               "FunctionId",
             ],
           },
         ]
       `);
-      expect(listResolverAppsyncFunctions.filter(obj => obj["Fn::GetAtt"][0].includes("QuerylistTodosauth0Function")))
+      expect(listResolverAppsyncFunctions.filter((obj) => obj['Fn::GetAtt'][0].includes('QuerylistTodosauth0Function')))
         .toMatchInlineSnapshot(`
-        Array [
-          Object {
-            "Fn::GetAtt": Array [
+        [
+          {
+            "Fn::GetAtt": [
               "QuerylistTodosauth0FunctionQuerylistTodosauth0FunctionAppSyncFunction7D761961",
               "FunctionId",
             ],
@@ -187,13 +188,13 @@ describe('user created resolvers', () => {
 
       await addApiWithoutSchema(projectDir, { apiName });
       await updateApiSchema(projectDir, apiName, 'custom_query.graphql');
-      await apiGqlCompile(projectDir, true);
+      await apiGqlCompile(projectDir);
 
       addCustomResolver(projectDir, apiName, resolverReqName, resolverReq);
       addCustomResolver(projectDir, apiName, resolverResName, resolverRes);
       writeToCustomResourcesJson(projectDir, apiName, Resources);
 
-      await apiGqlCompile(projectDir, true);
+      await apiGqlCompile(projectDir);
 
       expect(fs.readFileSync(generatedReqResolverPath).toString()).toEqual(resolverReq);
       expect(fs.readFileSync(generatedResResolverPath).toString()).toEqual(resolverRes);

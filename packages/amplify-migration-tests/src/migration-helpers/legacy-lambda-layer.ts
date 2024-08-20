@@ -1,4 +1,4 @@
-import { pathManager } from 'amplify-cli-core';
+import { pathManager } from '@aws-amplify/amplify-cli-core';
 import {
   ExecutionContext,
   getCLIPath,
@@ -9,7 +9,7 @@ import {
   multiSelect,
   nspawn as spawn,
   permissionChoices,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import * as fs from 'fs';
 import * as path from 'path';
 

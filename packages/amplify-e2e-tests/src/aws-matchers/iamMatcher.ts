@@ -29,8 +29,8 @@ export const toBeIAMRoleWithArn = async (roleName: string, arn?: string) => {
 };
 
 export const toHaveValidPolicyConditionMatchingIdpId = async (roleName: string, idpId: string) => {
-  let pass: boolean = false;
-  let message: string = '';
+  let pass = false;
+  let message = '';
 
   try {
     const iam = new IAM({
@@ -42,7 +42,7 @@ export const toHaveValidPolicyConditionMatchingIdpId = async (roleName: string, 
     const { Role: role } = await iam.getRole({ RoleName: roleName }).promise();
     const assumeRolePolicyDocument = JSON.parse(decodeURIComponent(role.AssumeRolePolicyDocument));
 
-    pass = assumeRolePolicyDocument.Statement.some(statement => {
+    pass = assumeRolePolicyDocument.Statement.some((statement) => {
       if (statement.Condition) {
         return (
           statement.Condition.StringEquals &&
@@ -59,6 +59,33 @@ export const toHaveValidPolicyConditionMatchingIdpId = async (roleName: string, 
     message = pass ? 'Found Matching Condition' : 'Matching Condition does not exist';
   } catch (e) {
     pass = false;
+    message = 'IAM GetRole threw Error: ' + e.message;
+  }
+
+  return {
+    message: () => message,
+    pass,
+  };
+};
+
+export const toHaveDenyAssumeRolePolicy = async (roleName: string) => {
+  let pass = false;
+  let message = '';
+
+  try {
+    const iam = new IAM({
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      sessionToken: process.env.AWS_SESSION_TOKEN,
+    });
+
+    const { Role: role } = await iam.getRole({ RoleName: roleName }).promise();
+    const assumeRolePolicyDocument = JSON.parse(decodeURIComponent(role.AssumeRolePolicyDocument));
+
+    pass = assumeRolePolicyDocument?.Statement?.length === 1 && assumeRolePolicyDocument?.Statement?.[0]?.Effect === 'Deny';
+
+    message = pass ? 'Assume role policy has Effect: Deny' : `Assume role policy does not exist or does not have Effect: Deny.`;
+  } catch (e) {
     message = 'IAM GetRole threw Error: ' + e.message;
   }
 

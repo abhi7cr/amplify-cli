@@ -1,11 +1,24 @@
-import { $TSAny, $TSContext, exitOnNextTick, JSONUtilities, NotImplementedError, stateManager } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
+/* eslint-disable */
+import { ensureEnvParamManager } from '@aws-amplify/amplify-environment-parameters';
+import {
+  $TSAny,
+  $TSContext,
+  $TSMeta,
+  AmplifySupportedService,
+  exitOnNextTick,
+  NotImplementedError,
+  open,
+  stateManager,
+} from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import _ from 'lodash';
+import { categoryName } from '../../constants';
 import { importDynamoDB, importedDynamoDBEnvInit } from './import/import-dynamodb';
 import { importedS3EnvInit, importS3 } from './import/import-s3';
+
 export { importResource } from './import';
 
-export async function addResource(context: $TSContext, category: string, service: string, options: $TSAny) {
+export const addResource = async (context: $TSContext, category: string, service: string, options: $TSAny) => {
   const serviceMetadata = ((await import('../supported-services')) as $TSAny).supportedServices[service];
   const { defaultValuesFilename, serviceWalkthroughFilename } = serviceMetadata;
   const serviceWalkthroughSrc = `${__dirname}/service-walkthroughs/${serviceWalkthroughFilename}`;
@@ -15,9 +28,9 @@ export async function addResource(context: $TSContext, category: string, service
     context.amplify.updateamplifyMetaAfterResourceAdd(category, resourceName, options);
     return resourceName;
   });
-}
+};
 
-export async function updateResource(context: $TSContext, category: string, service: string) {
+export const updateResource = async (context: $TSContext, category: string, service: string) => {
   const serviceMetadata = ((await import('../supported-services')) as $TSAny).supportedServices[service];
   const { defaultValuesFilename, serviceWalkthroughFilename } = serviceMetadata;
   const serviceWalkthroughSrc = `${__dirname}/service-walkthroughs/${serviceWalkthroughFilename}`;
@@ -31,9 +44,9 @@ export async function updateResource(context: $TSContext, category: string, serv
   }
 
   return updateWalkthrough(context, defaultValuesFilename, serviceMetadata);
-}
+};
 
-export async function migrateResource(context: $TSContext, projectPath: string, service: string, resourceName: string) {
+export const migrateResource = async (context: $TSContext, projectPath: string, service: string, resourceName: string) => {
   const serviceMetadata = ((await import('../supported-services')) as $TSAny).supportedServices[service];
   const { serviceWalkthroughFilename } = serviceMetadata;
   const serviceWalkthroughSrc = `${__dirname}/service-walkthroughs/${serviceWalkthroughFilename}`;
@@ -45,26 +58,28 @@ export async function migrateResource(context: $TSContext, projectPath: string, 
   }
 
   return migrate(context, projectPath, resourceName);
-}
+};
 
-export async function getPermissionPolicies(service: string, resourceName: string, crudOptions: $TSAny) {
+export const getPermissionPolicies = async (service: string, resourceName: string, crudOptions: $TSAny) => {
   const serviceMetadata = ((await import('../supported-services')) as $TSAny).supportedServices[service];
   const { serviceWalkthroughFilename } = serviceMetadata;
   const serviceWalkthroughSrc = `${__dirname}/service-walkthroughs/${serviceWalkthroughFilename}`;
   const { getIAMPolicies } = await import(serviceWalkthroughSrc);
 
   return getIAMPolicies(resourceName, crudOptions);
-}
+};
 
-export async function updateConfigOnEnvInit(context: $TSContext, category: string, resourceName: string, service: string) {
+export const updateConfigOnEnvInit = async (context: $TSContext, category: string, resourceName: string, service: string) => {
   const serviceMetadata = ((await import('../supported-services')) as $TSAny).supportedServices[service];
   const { provider } = serviceMetadata;
 
   const providerPlugin = context.amplify.getPluginInstance(context, provider);
+  await ensureEnvParamManager();
+
   // previously selected answers
   const resourceParams = providerPlugin.loadResourceParameters(context, category, resourceName);
   // ask only env specific questions
-  let currentEnvSpecificValues = context.amplify.loadEnvResourceParameters(context, category, resourceName);
+  const currentEnvSpecificValues = context.amplify.loadEnvResourceParameters(context, category, resourceName);
 
   const resource = _.get(context.exeInfo, ['amplifyMeta', category, resourceName]);
 
@@ -135,25 +150,55 @@ export async function updateConfigOnEnvInit(context: $TSContext, category: strin
         resource.lastPushTimeStamp = new Date();
       }
 
-      _.set(meta, [category, resourceName, 'lastPushTimeStamp'], cloudTimestamp);
+      _.setWith(meta, [category, resourceName, 'lastPushTimeStamp'], cloudTimestamp);
       stateManager.setMeta(undefined, meta);
     }
 
     return envSpecificParametersResult;
   }
-}
+};
 
-function isInHeadlessMode(context: $TSContext) {
+const isInHeadlessMode = (context: $TSContext) => {
   return context.exeInfo.inputParams.yes;
-}
+};
 
-function getHeadlessParams(context: $TSContext) {
-  const { inputParams } = context.exeInfo;
+const getHeadlessParams = (context: $TSContext) => {
   try {
-    // If the input given is a string validate it using JSON parse
-    const { categories = {} } = typeof inputParams === 'string' ? JSONUtilities.parse(inputParams) : inputParams;
+    const { categories = {} } = context.exeInfo.inputParams;
     return categories.storage || {};
   } catch (err) {
     throw new Error(`Failed to parse storage headless parameters: ${err}`);
   }
-}
+};
+
+export const console = async (amplifyMeta: $TSMeta, provider: string, service: string) => {
+  if (service === AmplifySupportedService.S3) {
+    const s3Resource = Object.values<any>(amplifyMeta[categoryName])
+      .filter((resource) => resource.service === service)
+      .pop();
+    if (!s3Resource) {
+      const errMessage = 'No S3 resources to open. You need to add a resource.';
+      printer.error(errMessage);
+      return;
+    }
+    const { BucketName: bucket, Region: region } = s3Resource.output;
+    const url = `https://s3.console.aws.amazon.com/s3/buckets/${bucket}?region=${region}`;
+    await open(url, { wait: false });
+  } else if (service === AmplifySupportedService.DYNAMODB) {
+    type Pickchoice = { name: string; value: { tableName: string; region: string } };
+    const tables: Pickchoice[] = Object.values<any>(amplifyMeta[categoryName])
+      .filter((resource) => resource.service === service)
+      .map((resource) => ({
+        name: resource.output.Name,
+        value: { tableName: resource.output.Name, region: resource.output.Region },
+      }));
+    if (!tables.length) {
+      const errMessage = 'No DynamoDB tables to open. You need to add a resource.';
+      printer.error(errMessage);
+      return;
+    }
+    const { tableName, region } = await prompter.pick<'one', Pickchoice['value']>('Select DynamoDB table to open on your browser', tables);
+    const url = `https://${region}.console.aws.amazon.com/dynamodbv2/home?region=${region}#table?name=${tableName}&tab=overview`;
+    await open(url, { wait: false });
+  }
+};

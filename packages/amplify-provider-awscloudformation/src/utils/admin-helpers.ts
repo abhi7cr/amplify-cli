@@ -1,34 +1,69 @@
-import { stateManager, $TSContext } from 'amplify-cli-core';
+import { stateManager, $TSContext, AmplifyError, AmplifyFault } from '@aws-amplify/amplify-cli-core';
 import aws from 'aws-sdk';
 import _ from 'lodash';
 import fetch from 'node-fetch';
+import { ProxyAgent } from 'proxy-agent';
 import { adminLoginFlow } from '../admin-login';
 import { AdminAuthConfig, AwsSdkConfig, CognitoAccessToken, CognitoIdToken } from './auth-types';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 
+/**
+ *
+ */
 export const adminVerifyUrl = (appId: string, envName: string, region: string): string => {
   const baseUrl = process.env.AMPLIFY_CLI_ADMINUI_BASE_URL ?? adminBackendMap[region]?.amplifyAdminUrl;
-  return `${baseUrl}/admin/${appId}/${envName}/verify/`;
+  return `${baseUrl}/admin/${appId}/${envName}/verify/?loginVersion=1`;
 };
 
+/**
+ *
+ */
 export function doAdminTokensExist(appId: string): boolean {
   if (!appId) {
-    throw `Failed to check if admin credentials exist: appId is undefined`;
+    throw new AmplifyError('AmplifyStudioError', {
+      message: `Failed to check if admin credentials exist: appId is undefined`,
+    });
   }
   return !!stateManager.getAmplifyAdminConfigEntry(appId);
 }
 
+/**
+  This logic queries AppState in the us-east-1 region which acts as a "global" region for all AppState data. The response of this query
+  is used to determine the "actual" region of the app and then query AppState in that region.
+  If AppState is unavailable in the us-east-1 region for some reason, we fallback looking for a region in amplify-meta.json.
+  If amplify-meta.json is not present, we prompt for a region.
+*/
 export async function isAmplifyAdminApp(appId: string): Promise<{ isAdminApp: boolean; region: string; userPoolID: string }> {
   if (!appId) {
-    throw `Failed to check if Amplify Studio is enabled: appId is undefined`;
+    throw new AmplifyError('AmplifyStudioError', {
+      message: `Failed to check if Amplify Studio is enabled: appId is undefined`,
+    });
   }
-  let appState = await getAdminAppState(appId, 'us-east-1');
-  if (appState.appId && appState.region && appState.region !== 'us-east-1') {
+  let appState: AppStateResponse | undefined = undefined;
+  let fallbackRegion: string | undefined = undefined;
+  try {
+    appState = await getAdminAppState(appId, 'us-east-1');
+  } catch {
+    try {
+      fallbackRegion = stateManager.getCurrentRegion();
+    } catch {
+      printer.warn('The region of this Amplify app could not be determined.');
+      fallbackRegion = await prompter.pick('Select the Amplify app region:', Object.keys(adminBackendMap));
+    }
+  }
+
+  if (appState && appState.appId && appState.region && appState.region !== 'us-east-1') {
     appState = await getAdminAppState(appId, appState.region);
+  } else if (fallbackRegion) {
+    appState = await getAdminAppState(appId, fallbackRegion);
   }
   const userPoolID = appState.loginAuthConfig ? JSON.parse(appState.loginAuthConfig).aws_user_pools_id : '';
   return { isAdminApp: !!appState.appId, region: appState.region, userPoolID };
 }
 
+/**
+ *
+ */
 export async function getTempCredsWithAdminTokens(context: $TSContext, appId: string): Promise<AwsSdkConfig> {
   if (!doAdminTokensExist(appId)) {
     await adminLoginFlow(context, appId);
@@ -45,10 +80,25 @@ export async function getTempCredsWithAdminTokens(context: $TSContext, appId: st
   return await getAdminStsCredentials(idToken, region);
 }
 
-async function getAdminAppState(appId: string, region: string) {
+type AppStateResponse = {
+  appId: string;
+  region: string;
+  loginAuthConfig: string; // JSON string that parses to { aws_user_pools_id: string }
+};
+
+async function getAdminAppState(appId: string, region: string): Promise<AppStateResponse> {
   // environment variable AMPLIFY_CLI_APPSTATE_BASE_URL useful for development against beta/gamma appstate endpoints
   const appStateBaseUrl = process.env.AMPLIFY_CLI_APPSTATE_BASE_URL ?? adminBackendMap[region].appStateUrl;
-  const res = await fetch(`${appStateBaseUrl}/AppState/?appId=${appId}`);
+  // HTTP_PROXY & HTTPS_PROXY env vars are read automatically by ProxyAgent, but we check to see if they are set before using the proxy
+  const httpProxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+  const fetchOptions = httpProxy ? { agent: new ProxyAgent() } : {};
+  const res = await fetch(`${appStateBaseUrl}/AppState/?appId=${appId}`, fetchOptions);
+  if (res.status >= 500) {
+    throw new AmplifyFault('ServiceCallFault', {
+      message: `AppState in region ${region} returned status ${res.status}`,
+      details: `Status: [${res.statusText}]`,
+    });
+  }
   return res.json();
 }
 
@@ -74,7 +124,9 @@ async function getAdminCognitoCredentials(idToken: CognitoIdToken, identityId: s
 }
 
 async function getAdminStsCredentials(idToken: CognitoIdToken, region: string): Promise<AwsSdkConfig> {
-  const sts = new aws.STS();
+  const sts = new aws.STS({
+    stsRegionalEndpoints: 'regional',
+  });
   const { Credentials } = await sts
     .assumeRole({
       RoleArn: idToken.payload['cognito:preferred_role'],
@@ -142,6 +194,10 @@ export const adminBackendMap: {
     amplifyAdminUrl: 'https://ap-northeast-2.admin.amplifyapp.com',
     appStateUrl: 'https://prod.ap-northeast-2.appstate.amplifyapp.com',
   },
+  'ap-northeast-3': {
+    amplifyAdminUrl: 'https://ap-northeast-3.admin.amplifyapp.com',
+    appStateUrl: 'https://prod.ap-northeast-3.appstate.amplifyapp.com',
+  },
   'ap-south-1': {
     amplifyAdminUrl: 'https://ap-south-1.admin.amplifyapp.com',
     appStateUrl: 'https://prod.ap-south-1.appstate.amplifyapp.com',
@@ -165,6 +221,10 @@ export const adminBackendMap: {
   'eu-north-1': {
     amplifyAdminUrl: 'https://eu-north-1.admin.amplifyapp.com',
     appStateUrl: 'https://prod.eu-north-1.appstate.amplifyapp.com',
+  },
+  'eu-south-1': {
+    amplifyAdminUrl: 'https://eu-south-1.admin.amplifyapp.com',
+    appStateUrl: 'https://prod.eu-south-1.appstate.amplifyapp.com',
   },
   'eu-west-1': {
     amplifyAdminUrl: 'https://eu-west-1.admin.amplifyapp.com',

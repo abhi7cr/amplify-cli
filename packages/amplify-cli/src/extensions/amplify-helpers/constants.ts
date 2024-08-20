@@ -1,13 +1,14 @@
 export const amplifyCLIConstants = Object.freeze({
   AmplifyCLIDirName: 'amplify',
   DotAmplifyDirName: '.amplify',
-  DotConfigamplifyCLISubDirName: '.config',
-  BackendamplifyCLISubDirName: 'backend',
-  CurrentCloudBackendamplifyCLISubDirName: '#current-cloud-backend',
+  DotConfigAmplifyCLISubDirName: '.config',
+  BackendAmplifyCLISubDirName: 'backend',
+  CurrentCloudBackendAmplifyCLISubDirName: '#current-cloud-backend',
   ProjectConfigFileName: 'project-config.json',
   amplifyMetaFileName: 'amplify-meta.json',
   CliName: 'amplify',
   DateTimeFormatString: 'YYYY-MM-DD-HH-mm-ss',
+  // eslint-disable-next-line spellcheck/spell-checker
   DateTimeFormatStringCompact: 'YYYYMMDDHHmmss',
   DefaultAWSAccessKeyId: '<YOUR_ACCESS_KEY_ID>',
   DefaultAWSSecretAccessKey: '<YOUR_SECRET_ACCESS_KEY>',

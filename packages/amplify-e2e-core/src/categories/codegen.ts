@@ -1,13 +1,14 @@
 import { getCLIPath, nspawn as spawn } from '..';
 
-export function generateModels(cwd: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    spawn(getCLIPath(), ['codegen', 'models'], { cwd, stripColors: true }).run((err: Error) => {
-      if (!err) {
-        resolve();
-      } else {
-        reject(err);
-      }
-    });
-  });
-}
+export const generateModels = (
+  cwd: string,
+  settings?: {
+    expectXcode?: boolean;
+  },
+): Promise<void> => {
+  const chain = spawn(getCLIPath(), ['codegen', 'models'], { cwd, stripColors: true });
+  if (settings?.expectXcode) {
+    chain.wait('Updating Xcode project').wait('Successfully added models').wait('Amplify setup completed successfully.');
+  }
+  return chain.runAsync();
+};

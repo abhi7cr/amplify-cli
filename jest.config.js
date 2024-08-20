@@ -25,7 +25,6 @@ module.exports = {
     '<rootDir>/packages/amplify-app',
     '<rootDir>/packages/amplify-appsync-simulator',
     '<rootDir>/packages/amplify-category-analytics',
-    '<rootDir>/packages/amplify-category-api',
     '<rootDir>/packages/amplify-category-auth',
     '<rootDir>/packages/amplify-category-geo',
     '<rootDir>/packages/amplify-category-function',
@@ -35,7 +34,6 @@ module.exports = {
     '<rootDir>/packages/amplify-category-notifications',
     '<rootDir>/packages/amplify-category-predictions',
     '<rootDir>/packages/amplify-category-storage',
-    '<rootDir>/packages/amplify-category-xr',
     '<rootDir>/packages/amplify-cli',
     '<rootDir>/packages/amplify-cli-core',
     '<rootDir>/packages/amplify-cli-logger',
@@ -47,6 +45,8 @@ module.exports = {
     '<rootDir>/packages/amplify-provider-awscloudformation',
     '<rootDir>/packages/amplify-storage-simulator',
     '<rootDir>/packages/amplify-util-mock',
+    '<rootDir>/scripts',
     // '<rootDir>/packages/amplify-velocity-template', // todo: enable after migration to Jest
   ],
+  reporters: ['default', ['jest-junit', { outputDirectory: 'reports', outputName: 'report.xml' }]],
 };

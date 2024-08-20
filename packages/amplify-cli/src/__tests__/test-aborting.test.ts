@@ -1,4 +1,5 @@
 import { Context } from '../domain/context';
+import { CLIInput as CommandLineInput } from '../domain/command-input';
 
 describe('test SIGINT with execute', () => {
   afterAll(() => {
@@ -9,8 +10,8 @@ describe('test SIGINT with execute', () => {
     const input = { argv: ['/usr/local/bin/node', '/usr/local/bin/amplify-dev', '-v'], options: { v: true } };
     const mockExit = jest.fn();
 
-    jest.setMock('amplify-cli-core', {
-      ...(jest.requireActual('amplify-cli-core') as Record<string, unknown>),
+    jest.setMock('@aws-amplify/amplify-cli-core', {
+      ...(jest.requireActual('@aws-amplify/amplify-cli-core') as Record<string, unknown>),
       JSONUtilities: {
         readJson: jest.fn().mockReturnValue({
           name: 'cli',
@@ -29,6 +30,7 @@ describe('test SIGINT with execute', () => {
         getMeta: jest.fn(),
         projectConfigExists: jest.fn(),
         localEnvInfoExists: jest.fn().mockReturnValue(true),
+        teamProviderInfoExists: jest.fn().mockReturnValue(true),
       },
       FeatureFlags: {
         initialize: jest.fn(),
@@ -60,15 +62,15 @@ describe('test SIGINT with execute', () => {
         verified: true,
       }),
     });
-    jest.setMock('amplify-cli-logger', {
-      logger: {
+    jest.setMock('@aws-amplify/amplify-cli-logger', {
+      getAmplifyLogger: jest.fn().mockReturnValue({
         logInfo: jest.fn(),
-      },
+      }),
       Redactor: jest.fn(),
     });
 
     const mockContext: Context = jest.createMockFromModule('../domain/context');
-    mockContext.input = input;
+    mockContext.input = input as unknown as CommandLineInput;
     mockContext.print = {
       warning: jest.fn(),
     };
@@ -85,10 +87,12 @@ describe('test SIGINT with execute', () => {
       pushInteractiveFlow: jest.fn(),
       getFlowReport: jest.fn(),
       assignProjectIdentifier: jest.fn(),
-
+      getUsageDataPayload: jest.fn(),
+      calculatePushNormalizationFactor: jest.fn(),
+      getSessionUuid: jest.fn(),
     };
     mockContext.projectHasMobileHubResources = false;
-    
+
     mockContext.amplify = jest.createMockFromModule('../domain/amplify-toolkit');
     Object.defineProperty(mockContext.amplify, 'getEnvInfo', { value: jest.fn() });
     jest.setMock('../context-manager', {
@@ -105,6 +109,8 @@ describe('test SIGINT with execute', () => {
       },
     });
 
+    jest.mock('@aws-amplify/amplify-environment-parameters');
+
     setTimeout(() => {
       process.emit('SIGINT', 'SIGINT');
       process.exitCode = 2;
@@ -118,7 +124,7 @@ describe('test SIGINT with execute', () => {
     expect(mockContext.usageData.emitError).toHaveBeenCalledTimes(0);
     expect(mockContext.usageData.emitSuccess).toHaveBeenCalledTimes(0);
     expect(mockExit).toBeCalledWith(2);
-  });
+  }, 10000);
 });
 
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

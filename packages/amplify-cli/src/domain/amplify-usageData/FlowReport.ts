@@ -1,9 +1,17 @@
 /* eslint-disable spellcheck/spell-checker */
-import { stateManager } from 'amplify-cli-core';
-import { logger, Redactor } from 'amplify-cli-logger';
-import { IAmplifyLogger } from 'amplify-cli-logger/lib/IAmplifyLogger';
-import { ICommandInput, IFlowData, IFlowReport, IOptionFlowCLIData, IOptionFlowHeadlessData, TypeOptionFlowData } from 'amplify-cli-shared-interfaces';
-import { Input } from '../input';
+import { stateManager } from '@aws-amplify/amplify-cli-core';
+import { CLIInput } from '../command-input';
+import { getAmplifyLogger, Redactor, IAmplifyLogger } from '@aws-amplify/amplify-cli-logger';
+
+import {
+  ICommandInput,
+  IFlowData,
+  IFlowReport,
+  IOptionFlowCLIData,
+  IOptionFlowHeadlessData,
+  TypeOptionFlowData,
+} from '@aws-amplify/amplify-cli-shared-interfaces';
+import { createHashedIdentifier } from '../../commands/helpers/encryption-helpers';
 
 /**
  * Store the data and sequence of events of CLI walkthrough
@@ -18,7 +26,7 @@ export class CLIFlowReport implements IFlowData {
   subCmd: string | undefined;
   optionFlowData!: Array<TypeOptionFlowData>;
   logger!: IAmplifyLogger;
-  input!: Input;
+  input!: CLIInput;
   timestamp: string;
   projectEnvIdentifier?: string; // hash(ProjectName + Amplify AppId + EnvName)
   projectIdentifier?: string; // hash( ProjectName + Amplify App Id)
@@ -26,9 +34,9 @@ export class CLIFlowReport implements IFlowData {
 
   constructor() {
     const currentTime = Date.now();
-    this.logger = logger;
+    this.logger = getAmplifyLogger();
     this.timestamp = currentTime.toString();
-    this.isHeadless = false; //set headless to true if running in headless mode : TBD: can we query this from stateManager?
+    this.isHeadless = false; // set headless to true if running in headless mode : TBD: can we query this from stateManager?
     this.optionFlowData = [];
   }
 
@@ -41,26 +49,27 @@ export class CLIFlowReport implements IFlowData {
         const projectName = stateManager.getProjectName();
         const envName = stateManager.getCurrentEnvName();
         const appId = stateManager.getAppID();
-        this.projectEnvIdentifier = `${projectName}${appId}${envName}`;
-        this.projectIdentifier = `${projectName}${appId}`;
+        const { projectEnvIdentifier, projectIdentifier } = createHashedIdentifier(projectName, appId, envName);
+        this.projectEnvIdentifier = projectEnvIdentifier;
+        this.projectIdentifier = projectIdentifier;
         return this.projectEnvIdentifier;
       } catch (e) {
         return undefined;
       }
     }
+    return undefined;
   }
-
 
   /**
    * Set the CLI input args
    * @param input - first arguments provided in the CLI flow
    */
-  setInput(input: Input): void {
+  setInput(input: CLIInput): void {
     this.input = input;
     this.runtime = input.argv[0] as string;
     this.executable = input.argv[1] as string;
     this.cmd = input.argv[2] as string;
-    this.subCmd = (input.argv[3]) ? input.argv[3] : undefined;
+    this.subCmd = input.argv[3] ? input.argv[3] : undefined;
     this.optionFlowData = []; // key-value store with ordering maintained
     // Parse options
     if (input.options?.prompt) {
@@ -101,7 +110,7 @@ export class CLIFlowReport implements IFlowData {
 
   /**
    * This method is to configure when the current flow is headless.
-   * @param isHeadless 
+   * @param isHeadless
    */
   setIsHeadless(isHeadless: boolean): void {
     this.isHeadless = isHeadless;
@@ -123,12 +132,11 @@ export class CLIFlowReport implements IFlowData {
    * @param headlessParameterString - headless parameter string ( serialized but before schema validation )
    */
   pushHeadlessFlow(headlessParameterString: string, cliInput: ICommandInput): void {
-    this.assignProjectIdentifier(); //conditionally initialize the project identifier
+    this.assignProjectIdentifier(); // conditionally initialize the project identifier
     this.setIsHeadless(true);
     this.setInput(cliInput);
     const cleanOption = Redactor(headlessParameterString);
     const timeStampedOption: IOptionFlowHeadlessData = { input: cleanOption, timestamp: new Date().valueOf() }; // attach unix-style timestamp
     this.optionFlowData.push(timeStampedOption);
   }
-
 }

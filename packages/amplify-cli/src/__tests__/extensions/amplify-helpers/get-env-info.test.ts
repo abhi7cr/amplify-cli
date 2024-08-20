@@ -1,26 +1,26 @@
+import { stateManager } from '@aws-amplify/amplify-cli-core';
 import { getEnvInfo } from '../../../extensions/amplify-helpers/get-env-info';
-import { stateManager } from 'amplify-cli-core';
 
-jest.mock('amplify-cli-core', () => ({
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
   stateManager: {
     getLocalEnvInfo: jest.fn(),
     localEnvInfoExists: jest.fn(),
   },
 }));
 
-const stateManager_mock = stateManager as jest.Mocked<typeof stateManager>;
+const stateManagerMock = stateManager as jest.Mocked<typeof stateManager>;
 
 beforeAll(() => {
-  stateManager_mock.getLocalEnvInfo.mockReturnValue({ test: true });
+  stateManagerMock.getLocalEnvInfo.mockReturnValue({ test: true });
 });
 
 test('Return env file info', () => {
-  stateManager_mock.localEnvInfoExists.mockReturnValue(true);
+  stateManagerMock.localEnvInfoExists.mockReturnValue(true);
   expect(getEnvInfo()).toHaveProperty('test', true);
 });
 
-test('Throw UndeterminedEnvironmentError', () => {
-  stateManager_mock.localEnvInfoExists.mockReturnValue(false);
+test('Throw EnvironmentNotInitializedError', () => {
+  stateManagerMock.localEnvInfoExists.mockReturnValue(false);
   expect(() => {
     getEnvInfo();
   }).toThrow();

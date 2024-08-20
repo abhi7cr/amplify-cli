@@ -5,7 +5,7 @@ import * as path from 'path';
 /**
  * Some constants and utils shared by github-prerelease and github-release
  */
-const owner = 'aws-amplify';
+const owner = process.env.GITHUB_REPO_OWNER ?? 'aws-amplify';
 const repo = 'amplify-cli';
 const apiTemplate = (subdomain: string) => `${subdomain}.github.com/repos/${owner}/${repo}/releases`;
 const API_URL = apiTemplate('api');
@@ -34,11 +34,14 @@ export const uploadReleaseFile = async (releaseId: string, filepath: string) => 
   });
 };
 
-export const getVersionFromArgs = () => {
-  if (process.argv.length !== 3) {
-    throw new Error(`Expected semver version as first and only argument`);
+export const getArgs = () => {
+  if (process.argv.length > 4) {
+    throw new Error(`Expected semver version and commit SHA to be the only arguments`);
   }
-  return process.argv[2].trim();
+  return {
+    version: process.argv[2].trim(),
+    commit: process.argv[3].trim(),
+  };
 };
 
 export const githubTagToSemver = (tag: string) => tag.slice(1);

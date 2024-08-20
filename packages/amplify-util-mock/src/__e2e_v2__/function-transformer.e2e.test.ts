@@ -1,9 +1,6 @@
-import { ModelTransformer } from '@aws-amplify/graphql-model-transformer';
-import { FunctionTransformer } from '@aws-amplify/graphql-function-transformer';
-import { GraphQLTransform } from '@aws-amplify/graphql-transformer-core';
-import { FeatureFlagProvider } from '@aws-amplify/graphql-transformer-interfaces';
 import { deploy, logDebug, GraphQLClient } from '../__e2e__/utils';
-import { AmplifyAppSyncSimulator } from 'amplify-appsync-simulator';
+import { AmplifyAppSyncSimulator } from '@aws-amplify/amplify-appsync-simulator';
+import { transformAndSynth, defaultTransformParams } from './test-synthesizer';
 
 jest.setTimeout(2000000);
 
@@ -33,13 +30,10 @@ describe('@function transformer', () => {
         msg: String!
       }`;
     try {
-      const transformer = new GraphQLTransform({
-        transformers: [new ModelTransformer(), new FunctionTransformer()],
-        featureFlags: {
-          getBoolean: name => (name === 'improvePluralization' ? true : false),
-        } as FeatureFlagProvider,
+      const out = transformAndSynth({
+        ...defaultTransformParams,
+        schema: validSchema,
       });
-      const out = transformer.transform(validSchema);
       const result = await deploy(out);
       server = result.simulator;
 
@@ -57,18 +51,18 @@ describe('@function transformer', () => {
   afterAll(async () => {
     try {
       if (server) {
-        server.stop();
+        await server.stop();
       }
     } catch (e) {
       console.error(e);
-      expect(true).toEqual(false);
+      throw e;
     }
   });
 
   /**
    * Test queries below
    */
-  test('Test simple echo function', async () => {
+  test('simple echo function', async () => {
     const response = await GRAPHQL_CLIENT.query(
       `query {
         echo(msg: "Hello") {
@@ -88,7 +82,7 @@ describe('@function transformer', () => {
     expect(response.data.echo.fieldName).toEqual('echo');
   });
 
-  test('Test simple duplicate function', async () => {
+  test('simple duplicate function', async () => {
     const response = await GRAPHQL_CLIENT.query(
       `query {
           duplicate(msg: "Hello") {
@@ -107,7 +101,7 @@ describe('@function transformer', () => {
     expect(response.data.duplicate.fieldName).toEqual('duplicate');
   });
 
-  test('Test pipeline of @function(s)', async () => {
+  test('pipeline of @function(s)', async () => {
     const response = await GRAPHQL_CLIENT.query(
       `query {
           pipeline(msg: "IGNORED")
@@ -118,7 +112,7 @@ describe('@function transformer', () => {
     expect(response.data.pipeline).toEqual('Hello, world!');
   });
 
-  test('Test pipelineReverse of @function(s)', async () => {
+  test('pipelineReverse of @function(s)', async () => {
     const response = await GRAPHQL_CLIENT.query(
       `query {
           pipelineReverse(msg: "Hello") {

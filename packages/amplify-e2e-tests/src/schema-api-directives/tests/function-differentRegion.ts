@@ -1,21 +1,22 @@
 //special handling needed becasue we need to set up the function in a differnt region
-import path from 'path';
 import fs from 'fs-extra';
+import path from 'path';
 
 import {
-  getProjectMeta,
-  deleteProject,
-  deleteProjectDir,
   addApi,
+  addFunction,
   amplifyPush,
   amplifyPushWithoutCodegen,
-  addFunction,
+  configureAmplify,
+  deleteProject,
+  deleteProjectDir,
+  getApiKey,
+  getConfiguredAppsyncClientAPIKeyAuth,
+  getProjectMeta,
   initProjectWithAccessKey,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 
-import { getApiKey, configureAmplify, getConfiguredAppsyncClientAPIKeyAuth } from '../authHelper';
-
-import { updateSchemaInTestProject, testQueries } from '../common';
+import { testQueries, updateSchemaInTestProject } from '../common';
 
 import { randomizedFunctionName } from '../functionTester';
 
@@ -37,8 +38,6 @@ export async function runTest(projectDir: string, testModule: any) {
     const appSyncClient = getConfiguredAppsyncClientAPIKeyAuth(awsconfig.aws_appsync_graphqlEndpoint, awsconfig.aws_appsync_region, apiKey);
 
     await testQueries(testModule, appSyncClient);
-  } catch (e) {
-    throw e;
   } finally {
     await deleteFunctionProject(functionProjectDirPath);
   }

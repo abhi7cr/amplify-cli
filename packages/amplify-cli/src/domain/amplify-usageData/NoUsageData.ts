@@ -1,14 +1,65 @@
-/* eslint-disable @typescript-eslint/no-empty-function */
 /* eslint-disable class-methods-use-this */
-import { IFlowReport } from 'amplify-cli-shared-interfaces/lib/amplify-cli-flow-reporter-types';
-import { ICommandInput, IFlowData } from 'amplify-cli-shared-interfaces';
+import { IFlowData } from '@aws-amplify/amplify-cli-shared-interfaces';
+import { IFlowReport } from '@aws-amplify/amplify-cli-shared-interfaces';
+import { CLIInput } from '../command-input';
+import { IUsageData, IUsageDataPayload, ProjectSettings } from '@aws-amplify/amplify-cli-core';
 import { CLINoFlowReport } from './NoFlowReport';
-import { IUsageData } from './IUsageData';
+import { UsageDataPayload } from './UsageDataPayload';
 
 /**
  * Noop implementation of IUsageData used when customers have usage data turned off
  */
 export class NoUsageData implements IUsageData, IFlowData {
+  private static instance: NoUsageData;
+  private static flow: CLINoFlowReport;
+
+  /**
+   * Return a default payload
+   * @param error - error to include in the payload
+   * @param state - state to include in the payload
+   * @returns UsageDataPayload
+   */
+  getUsageDataPayload(error: Error | null, state: string): IUsageDataPayload {
+    return new UsageDataPayload(
+      '',
+      '',
+      '',
+      new CLIInput([]),
+      error,
+      state,
+      '',
+      {} as unknown as ProjectSettings,
+      {},
+      {},
+      {
+        version: '',
+        category: '',
+        cmd: '',
+        executable: '',
+        input: { argv: [], command: '' },
+        isHeadless: true,
+        optionFlowData: [],
+        runtime: '',
+        subCmd: '',
+        timestamp: '',
+      },
+    );
+  }
+
+  /**
+   *  Noop implementation of calculatePushNormalizationFactor
+   */
+  calculatePushNormalizationFactor(): void {
+    /* noop */
+  }
+
+  /**
+   * Noop implementation of getSessionUuid
+   */
+  getSessionUuid(): string {
+    return '';
+  }
+
   /**
    * Noop implementation of emitError
    */
@@ -33,41 +84,45 @@ export class NoUsageData implements IUsageData, IFlowData {
   /**
    * Noop implementation of init
    */
-  init(): void { /* noop */ }
+  init(): void {
+    /* noop */
+  }
 
   /**
    *  Noop implementation of startCodePathTimer
    */
-  startCodePathTimer(): void { /* noop */ }
+  startCodePathTimer(): void {
+    /* noop */
+  }
 
   /**
    *  Noop implementation of stopCodePathTimer
    */
-  stopCodePathTimer(): void { /* noop */ }
-
-  /**
-   * Noop function 
-   */
-  // eslint-disable-next-line class-methods-use-this
-  pushInteractiveFlow = (_prompt: string, _input: unknown): void => {
+  stopCodePathTimer(): void {
     /* noop */
   }
 
   /**
    * Noop function
    */
-  // eslint-disable-next-line class-methods-use-this
-  pushHeadlessFlow = (_headlessFlowDataString: string, _input: ICommandInput): void => {
+  pushInteractiveFlow = (): void => {
     /* noop */
-  }
+  };
+
+  /**
+   * Noop function
+   */
+  pushHeadlessFlow = (): void => {
+    /* noop */
+  };
 
   /**
    * Noop function to set isHeadless flag in flowLogger
-   * @param _headless 
+   * @param __headless unused
    */
-  setIsHeadless = (_headless: boolean): void => {
+  setIsHeadless = (): void => {
     /* noop */
-  }
+  };
 
   /**
    * Empty function is for flow report.
@@ -85,8 +140,6 @@ export class NoUsageData implements IUsageData, IFlowData {
     return undefined;
   }
 
-  private static instance: NoUsageData;
-  private static flow: CLINoFlowReport;
   /**
    * Get or create the singleton instance
    */

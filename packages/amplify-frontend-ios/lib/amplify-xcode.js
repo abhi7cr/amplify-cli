@@ -19,10 +19,10 @@
 
 const execa = require('execa');
 const path = require('path');
-const { pathManager } = require('amplify-cli-core');
+const { pathManager } = require('@aws-amplify/amplify-cli-core');
 
 const BINARY_PATH = 'resources/amplify-xcode';
-const PACKAGE_NAME = 'amplify-frontend-ios';
+const PACKAGE_NAME = '@aws-amplify/amplify-frontend-ios';
 const amplifyXcodePath = () => path.join(pathManager.getAmplifyPackageLibDirPath(PACKAGE_NAME), BINARY_PATH);
 
 /**
@@ -31,11 +31,12 @@ const amplifyXcodePath = () => path.join(pathManager.getAmplifyPackageLibDirPath
  * @param {String} params.path - Project base path
  */
 async function importConfig(params) {
-  let command = `${amplifyXcodePath()} import-config`;
+  const command = amplifyXcodePath();
+  const args = ['import-config'];
   if (params['path']) {
-    command += ` --path=${params['path']}`;
+    args.push(`--path=${params['path']}`);
   }
-  await execa.command(command, { stdout: 'inherit' });
+  await execa(command, args, { stdout: 'inherit' });
 }
 
 /**
@@ -44,11 +45,12 @@ async function importConfig(params) {
  * @param {String} params.path - Project base path
  */
 async function importModels(params) {
-  let command = `${amplifyXcodePath()} import-models`;
+  const command = amplifyXcodePath();
+  const args = ['import-models'];
   if (params['path']) {
-    command += ` --path=${params['path']}`;
+    args.push(`--path=${params['path']}`);
   }
-  await execa.command(command, { stdout: 'inherit' });
+  await execa(command, args, { stdout: 'inherit' });
 }
 
 /**
@@ -57,11 +59,12 @@ async function importModels(params) {
  * @param {String} params.output-path - Path to save the output of generated schema file
  */
 async function generateSchema(params) {
-  let command = `${amplifyXcodePath()} generate-schema`;
+  const command = amplifyXcodePath();
+  const args = ['generate-schema'];
   if (params['output-path']) {
-    command += ` --output-path=${params['output-path']}`;
+    args.push(`--output-path=${params['output-path']}`);
   }
-  await execa.command(command, { stdout: 'inherit' });
+  await execa(command, args, { stdout: 'inherit' });
 }
 
 module.exports = {

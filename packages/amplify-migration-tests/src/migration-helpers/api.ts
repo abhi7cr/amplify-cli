@@ -7,7 +7,7 @@ import {
   nspawn as spawn,
   selectRuntime,
   selectTemplate,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { assign } from 'lodash';
 
 /**
@@ -89,7 +89,7 @@ export function addApiWithSchemaAndConflictDetectionOldDx(cwd: string, schemaFil
 
 export function addRestApiOldDx(cwd: string, settings: any) {
   const isFirstRestApi = settings.isFirstRestApi ?? true;
-  let chain = spawn(getCLIPath(), ['add', 'api'], { cwd, stripColors: true })
+  const chain = spawn(getCLIPath(), ['add', 'api'], { cwd, stripColors: true })
     .wait('Select from one of the below mentioned services')
     .sendKeyDown()
     .sendCarriageReturn(); // REST

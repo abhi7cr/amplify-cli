@@ -1,18 +1,18 @@
 /* eslint-disable */
-import path from 'path';
-import fs from 'fs-extra';
 import {
-  addAuthWithPreTokenGenerationTrigger,
   addApiWithCognitoUserPoolAuthTypeWhenAuthExists,
-  updateAuthAddUserGroups,
+  addAuthWithPreTokenGenerationTrigger,
   amplifyPush,
-} from 'amplify-e2e-core';
-
-import {
-  getUserPoolId, configureAmplify, setupUser, signInUser, getConfiguredAppsyncClientCognitoAuth,
-} from '../authHelper';
-
-import { updateSchemaInTestProject, testMutation } from '../common';
+  configureAmplify,
+  getConfiguredAppsyncClientCognitoAuth,
+  getUserPoolId,
+  setupUser,
+  signInUser,
+  updateAuthAddUserGroups,
+} from '@aws-amplify/amplify-e2e-core';
+import fs from 'fs-extra';
+import path from 'path';
+import { testMutation, updateSchemaInTestProject } from '../common';
 
 const GROUPNAME = 'Moderator';
 const USERNAME = 'user1';

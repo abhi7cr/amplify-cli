@@ -1,26 +1,23 @@
 //special handling needed becasue we need to set up the function in a differnt region
-import path from 'path';
-import fs from 'fs-extra';
 import {
-  amplifyPush,
-  addFunction,
   addApiWithCognitoUserPoolAuthTypeWhenAuthExists,
-  updateAuthAddUserGroups,
   addAuthWithDefault,
-} from 'amplify-e2e-core';
+  addFunction,
+  amplifyPush,
+  configureAmplify,
+  getCognitoResourceName,
+  getConfiguredAppsyncClientCognitoAuth,
+  getUserPoolId,
+  setupUser,
+  signInUser,
+  updateAuthAddUserGroups,
+} from '@aws-amplify/amplify-e2e-core';
+import fs from 'fs-extra';
+import path from 'path';
 
 import { updateFunctionNameInSchema } from '../functionTester';
 
-import {
-  configureAmplify,
-  getUserPoolId,
-  getCognitoResourceName,
-  setupUser,
-  signInUser,
-  getConfiguredAppsyncClientCognitoAuth,
-} from '../authHelper';
-
-import { updateSchemaInTestProject, testQueries } from '../common';
+import { testQueries, updateSchemaInTestProject } from '../common';
 
 import { randomizedFunctionName } from '../functionTester';
 
@@ -93,8 +90,8 @@ var authMyResourceNameUserPoolId = process.env.AUTH_MYRESOURCENAME_USERPOOLID
 
 Amplify Params - DO NOT EDIT */
 
-const { CognitoIdentityServiceProvider } = require('aws-sdk');
-const cognitoIdentityServiceProvider = new CognitoIdentityServiceProvider();
+const { AdminGetUserCommand, CognitoIdentityProviderClient } = require('@aws-sdk/client-cognito-identity-provider');
+const cognitoIdentityServiceProvider = new CognitoIdentityProviderClient({ region: process.env.REGION });
 
 /**
  * Get user pool information from environment variables.
@@ -120,7 +117,7 @@ const resolvers = {
       };
       try {
         // Read more: https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/CognitoIdentityServiceProvider.html#adminGetUser-property
-        return await cognitoIdentityServiceProvider.adminGetUser(params).promise();
+        return await cognitoIdentityServiceProvider.send(new AdminGetUserCommand(params));
       } catch (e) {
         throw new Error('NOT FOUND');
       }

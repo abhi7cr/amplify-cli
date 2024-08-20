@@ -1,13 +1,23 @@
+/* eslint-disable spellcheck/spell-checker */
 import {
-  getBackendAmplifyMeta, getAppId, amplifyPull, createNewProjectDir, deleteProject, deleteProjectDir, initJSProjectWithProfile,
-} from 'amplify-e2e-core';
-import {
-  getNpxPath, getNpmPath, myIconComponent, formCheckoutComponent,
-} from 'amplify-e2e-core';
+  getBackendAmplifyMeta,
+  getAppId,
+  createNewProjectDir,
+  deleteProject,
+  deleteProjectDir,
+  initJSProjectWithProfile,
+  getNpxPath,
+  getNpmPath,
+  myIconComponent,
+  formCheckoutComponent,
+  enableAdminUI,
+  amplifyStudioHeadlessPull,
+} from '@aws-amplify/amplify-e2e-core';
 import { spawnSync, spawn } from 'child_process';
 import { AmplifyUIBuilder } from 'aws-sdk';
 import fs from 'fs-extra';
 import path from 'path';
+import * as execa from 'execa';
 
 describe('amplify pull with uibuilder', () => {
   let projRoot: string;
@@ -16,8 +26,17 @@ describe('amplify pull with uibuilder', () => {
   let projectName: string;
   let reactDir: string;
   let appId: string;
-  const envName = 'integtest';
 
+  const envName = 'integtest';
+  const cypressConfig = `
+    const { defineConfig } = require('cypress')
+
+    module.exports = defineConfig({
+      e2e: {
+        supportFile: false
+      }
+    })
+  `;
   beforeEach(async () => {
     projRoot = await createNewProjectDir('pull-uibuilder');
     projRoot2 = await createNewProjectDir('pull-uibuilder-2');
@@ -32,19 +51,27 @@ describe('amplify pull with uibuilder', () => {
 
     appId = getAppId(projRoot);
     const meta = getBackendAmplifyMeta(projRoot);
-    const amplifyUIBuilder = new AmplifyUIBuilder({ region: meta.providers.awscloudformation.Region });
+    const region = meta.providers.awscloudformation.Region;
+    const amplifyUIBuilder = new AmplifyUIBuilder({ region });
 
-    await amplifyUIBuilder.createComponent({
-      appId,
-      environmentName: envName,
-      componentToCreate: myIconComponent,
-    }).promise();
+    await amplifyUIBuilder
+      .createComponent({
+        appId,
+        environmentName: envName,
+        componentToCreate: myIconComponent,
+      })
+      .promise();
 
-    await amplifyUIBuilder.createComponent({
-      appId,
-      environmentName: envName,
-      componentToCreate: formCheckoutComponent,
-    }).promise();
+    await amplifyUIBuilder
+      .createComponent({
+        appId,
+        environmentName: envName,
+        componentToCreate: formCheckoutComponent,
+      })
+      .promise();
+
+    // needs to enable studio for resources to be pull down
+    await enableAdminUI(appId, envName, region);
   });
 
   afterEach(async () => {
@@ -54,16 +81,19 @@ describe('amplify pull with uibuilder', () => {
     deleteProjectDir(reactDir);
   });
 
-  it('appropriate uibiulder files are generated', async () => {
-    spawnSync(getNpxPath(), ['create-react-app', projectName], { cwd: projectDir, encoding: 'utf-8' });
-    await amplifyPull(reactDir, { appId, envName, emptyDir: true });
+  it('appropriate uibuilder files are generated', async () => {
+    execa.sync(getNpxPath(), ['create-react-app', projectName, '--use-npm'], { cwd: projectDir, encoding: 'utf-8' });
+    await amplifyStudioHeadlessPull(reactDir, { appId, envName });
     const fileList = fs.readdirSync(`${reactDir}/src/ui-components/`);
     expect(fileList).toContain('FormCheckout.jsx');
     expect(fileList).toContain('FormCheckout.d.ts');
     expect(fileList).toContain('MyIcon.d.ts');
     expect(fileList).toContain('MyIcon.jsx');
     expect(fileList).toContain('index.js');
-    expect(fileList).toHaveLength(5);
+    expect(fileList).toContain('studioTheme.js');
+    expect(fileList).toContain('studioTheme.js.d.ts');
+    expect(fileList).toContain('utils.js');
+    expect(fileList).toHaveLength(8);
 
     spawnSync(
       getNpmPath(),
@@ -74,23 +104,23 @@ describe('amplify pull with uibuilder', () => {
 
     fs.unlinkSync(`${reactDir}/src/App.js`);
     fs.writeFileSync(`${reactDir}/src/App.js`, fs.readFileSync(path.join(__dirname, '..', 'cypress', 'uibuilder', 'uibuilder-app.js')));
-    fs.writeFileSync(`${reactDir}/cypress.json`, '{}');
-    fs.mkdirsSync(`${reactDir}/cypress/integration/`);
+    fs.writeFileSync(`${reactDir}/cypress.config.js`, cypressConfig);
+    fs.mkdirsSync(`${reactDir}/cypress/e2e/`);
     fs.writeFileSync(
-      `${reactDir}/cypress/integration/sample_spec.js`,
+      `${reactDir}/cypress/e2e/sample_spec.cy.js`,
       fs.readFileSync(path.join(__dirname, '..', 'cypress', 'uibuilder', 'uibuilder-spec.js')),
     );
 
     const npmStartProcess = spawn(getNpmPath(), ['start'], { cwd: reactDir, timeout: 300000 });
     // Give react server time to start
-    await new Promise(resolve => setTimeout(resolve, 60000));
-    const res = spawnSync(getNpxPath(), ['cypress', 'run'], { cwd: reactDir, encoding: 'utf8' });
+    await new Promise((resolve) => setTimeout(resolve, 60000));
+    const res = execa.sync(getNpxPath(), ['cypress', 'run'], { cwd: reactDir, encoding: 'utf8' });
     // kill the react server process
     spawnSync('kill', [`${npmStartProcess.pid}`], { encoding: 'utf8' });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     // Seriously, kill the react server process
     // react-scripts somehow resurrects the process automatically after the first kill.
     spawnSync('pkill', ['-f', 'react'], { encoding: 'utf8' });
-    expect(res.status).toBe(0);
+    expect(res.exitCode).toBe(0);
   });
 });

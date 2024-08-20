@@ -1,13 +1,23 @@
-import { exitOnNextTick, JSONUtilities, pathManager, stateManager, $TSAny, $TSContext } from 'amplify-cli-core';
+import {
+  exitOnNextTick,
+  JSONUtilities,
+  pathManager,
+  stateManager,
+  $TSAny,
+  $TSContext,
+  AmplifyError,
+  LocalEnvInfo,
+} from '@aws-amplify/amplify-cli-core';
 import fs from 'fs-extra';
 import chalk from 'chalk';
 import { prompt } from 'inquirer';
 import _ from 'lodash';
 import path from 'path';
-import proxyAgent from 'proxy-agent';
+import { ProxyAgent } from 'proxy-agent';
+import { STS } from 'aws-sdk';
 import awsRegions from './aws-regions';
 import constants from './constants';
-import setupNewUser from './setup-new-user';
+import * as setupNewUser from './setup-new-user';
 import obfuscateUtil from './utility-obfuscate';
 import * as systemConfigManager from './system-config-manager';
 import { doAdminTokensExist, getTempCredsWithAdminTokens, isAmplifyAdminApp } from './utils/admin-helpers';
@@ -18,11 +28,10 @@ import {
   authTypeQuestion,
   createConfirmQuestion,
   profileNameQuestion,
-  removeProjectComfirmQuestion,
+  removeProjectConfirmQuestion,
   updateOrRemoveQuestion,
   retryAuthConfig,
 } from './question-flows/configuration-questions';
-import { STS } from 'aws-sdk';
 
 interface AwsConfig extends AwsSecrets {
   useProfile?: boolean;
@@ -94,10 +103,11 @@ export async function configure(context: $TSContext) {
     await setProjectConfigAction(context);
     return await carryOutConfigAction(context);
   }
+  return undefined;
 }
 
 async function enableServerlessContainers(context: $TSContext) {
-  const frontend = context.exeInfo.projectConfig.frontend;
+  const { frontend } = context.exeInfo.projectConfig;
   const { config = {} } = context.exeInfo.projectConfig[frontend] || {};
   // TODO: check for headless mode parameter to avoid the question
   const { ServerlessContainers } = await prompt({
@@ -121,7 +131,7 @@ function doesAwsConfigExists(context: $TSContext) {
   if (stateManager.localAWSInfoExists()) {
     const envAwsInfo = stateManager.getLocalAWSInfo();
     if (envAwsInfo[envName]) {
-      context.exeInfo = context.exeInfo || {};
+      context.exeInfo ??= { inputParams: {}, localEnvInfo: {} as unknown as LocalEnvInfo };
       context.exeInfo.awsConfigInfo = envAwsInfo[envName];
       context.exeInfo.awsConfigInfo.config = envAwsInfo[envName];
       configExists = true;
@@ -137,7 +147,7 @@ function normalizeInputParams(context: $TSContext) {
     if (context.exeInfo.inputParams[constants.ProviderName]) {
       inputParams = context.exeInfo.inputParams[constants.ProviderName];
     } else {
-      for (let alias of constants.Aliases) {
+      for (const alias of constants.Aliases) {
         if (context.exeInfo.inputParams[alias]) {
           inputParams = context.exeInfo.inputParams[alias];
           break;
@@ -178,8 +188,10 @@ function normalizeInputParams(context: $TSContext) {
         }
       }
       if (errorMessage) {
-        context.print.error('Error in the command line parameter for awscloudformation configuration.');
-        throw new Error(errorMessage);
+        throw new AmplifyError('ConfigurationError', {
+          message: 'Error in the command line parameter for awscloudformation configuration.',
+          details: errorMessage,
+        });
       }
     }
     context.exeInfo.inputParams[constants.ProviderName] = normalizedInputParams;
@@ -255,10 +267,9 @@ async function initialize(context: $TSContext, authConfig?: AuthFlowConfig) {
       }
 
       return initialize(context, authConfig);
-    } else {
-      context.print.error('Exiting...');
-      exitOnNextTick(1);
     }
+    context.print.error('Exiting...');
+    exitOnNextTick(1);
   }
 
   return context;
@@ -284,7 +295,9 @@ async function create(context: $TSContext) {
   if (awsConfigInfo.configValidated) {
     persistLocalEnvConfig(context);
   } else {
-    throw new Error('Invalid configuration settings');
+    throw new AmplifyError('ConfigurationError', {
+      message: 'Invalid configuration settings.',
+    });
   }
   return context;
 }
@@ -301,7 +314,9 @@ async function update(context: $TSContext) {
   if (awsConfigInfo.configValidated) {
     updateProjectConfig(context);
   } else {
-    throw new Error('Invalid configuration settings');
+    throw new AmplifyError('ConfigurationError', {
+      message: 'Invalid configuration settings.',
+    });
   }
   return context;
 }
@@ -362,7 +377,7 @@ async function setProjectConfigAction(context: $TSContext) {
 
 async function confirmProjectConfigRemoval(context: $TSContext) {
   if (!context.exeInfo.inputParams.yes) {
-    const answer = await prompt(removeProjectComfirmQuestion);
+    const answer = await prompt(removeProjectConfirmQuestion);
     context.exeInfo.awsConfigInfo.action = answer.removeProjectConfig ? 'remove' : 'cancel';
   }
   return context;
@@ -401,14 +416,15 @@ async function promptForAuthConfig(context: $TSContext, authConfig?: AuthFlowCon
       answers = await prompt(profileNameQuestion(availableProfiles, awsConfigInfo.config.profileName));
       awsConfigInfo.config.profileName = answers.profileName;
       return;
-    } else if (authType === 'admin') {
+    }
+
+    if (authType === 'admin') {
       awsConfigInfo.configLevel = 'amplifyAdmin';
       awsConfigInfo.config.useProfile = false;
       return;
-    } else {
-      awsConfigInfo.config.useProfile = false;
-      delete awsConfigInfo.config.profileName;
     }
+    awsConfigInfo.config.useProfile = false;
+    delete awsConfigInfo.config.profileName;
   } else {
     awsConfigInfo.config.useProfile = false;
   }
@@ -535,33 +551,35 @@ function getConfigForEnv(context: $TSContext, envName: string) {
     configLevel: 'general',
     config: {},
   };
+  if (typeof context?.exeInfo?.inputParams?.awscloudformation === 'object') {
+    const config = context?.exeInfo?.inputParams?.awscloudformation;
+    projectConfigInfo.configLevel = config.configLevel || 'general';
+    projectConfigInfo.config = config;
+  }
   const dotConfigDirPath = pathManager.getDotConfigDirPath();
   const configInfoFilePath = path.join(dotConfigDirPath, constants.LocalAWSInfoFileName);
 
   if (fs.existsSync(configInfoFilePath)) {
-    try {
-      const configInfo = JSONUtilities.readJson(configInfoFilePath)[envName];
-
-      if (configInfo && configInfo.configLevel !== 'general' && configInfo.configLevel !== 'amplifyAdmin') {
-        if (configInfo.useProfile && configInfo.profileName) {
-          projectConfigInfo.config.useProfile = configInfo.useProfile;
-          projectConfigInfo.config.profileName = configInfo.profileName;
-        } else if (configInfo.awsConfigFilePath && fs.existsSync(configInfo.awsConfigFilePath)) {
-          const awsSecrets = JSONUtilities.readJson<AwsSecrets>(configInfo.awsConfigFilePath);
-          projectConfigInfo.config.useProfile = false;
-          projectConfigInfo.config.awsConfigFilePath = configInfo.awsConfigFilePath;
-          projectConfigInfo.config.accessKeyId = awsSecrets.accessKeyId;
-          projectConfigInfo.config.secretAccessKey = awsSecrets.secretAccessKey;
-          projectConfigInfo.config.region = awsSecrets.region;
-        } else {
-          throw new Error(`Corrupt file contents in ${configInfoFilePath}`);
-        }
-        projectConfigInfo.configLevel = 'project';
-      } else if (configInfo) {
-        projectConfigInfo.configLevel = configInfo.configLevel;
+    const configInfo = JSONUtilities.readJson(configInfoFilePath)[envName];
+    if (configInfo && configInfo.configLevel !== 'general' && configInfo.configLevel !== 'amplifyAdmin') {
+      if (configInfo.useProfile && configInfo.profileName) {
+        projectConfigInfo.config.useProfile = configInfo.useProfile;
+        projectConfigInfo.config.profileName = configInfo.profileName;
+      } else if (configInfo.awsConfigFilePath && fs.existsSync(configInfo.awsConfigFilePath)) {
+        const awsSecrets = JSONUtilities.readJson<AwsSecrets>(configInfo.awsConfigFilePath);
+        projectConfigInfo.config.useProfile = false;
+        projectConfigInfo.config.awsConfigFilePath = configInfo.awsConfigFilePath;
+        projectConfigInfo.config.accessKeyId = awsSecrets.accessKeyId;
+        projectConfigInfo.config.secretAccessKey = awsSecrets.secretAccessKey;
+        projectConfigInfo.config.region = awsSecrets.region;
+      } else {
+        throw new AmplifyError('ConfigurationError', {
+          message: `Corrupt file contents in ${configInfoFilePath}`,
+        });
       }
-    } catch (e) {
-      throw e;
+      projectConfigInfo.configLevel = 'project';
+    } else if (configInfo) {
+      projectConfigInfo.configLevel = configInfo.configLevel;
     }
   }
   return projectConfigInfo;
@@ -591,7 +609,7 @@ function removeProjectConfig(envName: string) {
 }
 
 export async function loadConfiguration(context: $TSContext): Promise<AwsSecrets> {
-  const { envName } = context.amplify.getEnvInfo();
+  const envName = stateManager.getCurrentEnvName() || context?.exeInfo?.inputParams?.amplify?.envName;
   const config = await loadConfigurationForEnv(context, envName);
   return config;
 }
@@ -603,7 +621,9 @@ function loadConfigFromPath(profilePath: string): AwsSdkConfig {
       return config;
     }
   }
-  throw new Error(`Invalid config ${profilePath}`);
+  throw new AmplifyError('ConfigurationError', {
+    message: `Invalid config ${profilePath}`,
+  });
 }
 
 export async function loadConfigurationForEnv(context: $TSContext, env: string, appId?: string): Promise<AwsSdkConfig> {
@@ -611,8 +631,11 @@ export async function loadConfigurationForEnv(context: $TSContext, env: string, 
 
   if (awsConfigInfo?.config?.accessKeyId && awsConfigInfo?.config?.secretAccessKey) {
     // Already loaded config
-    if (!awsConfigInfo.region) {
+    if (!awsConfigInfo.region && !awsConfigInfo?.config?.region) {
       awsConfigInfo.region = resolveRegion();
+      if (typeof awsConfigInfo.config === 'object') {
+        awsConfigInfo.config.region = awsConfigInfo.region;
+      }
     }
 
     return awsConfigInfo.config;
@@ -628,18 +651,28 @@ export async function loadConfigurationForEnv(context: $TSContext, env: string, 
 
     try {
       awsConfig = await getTempCredsWithAdminTokens(context, appId);
-    } catch (e) {
-      context.print.error(`Failed to get credentials: ${e.message || e}`);
-      await context.usageData.emitError(e);
-      exitOnNextTick(1);
+    } catch (err) {
+      throw new AmplifyError(
+        'ProfileConfigurationError',
+        {
+          message: 'Failed to get AWS credentials',
+          details: err.message,
+        },
+        err,
+      );
     }
   } else if (authType.type === 'profile') {
     try {
       awsConfig = await systemConfigManager.getProfiledAwsConfig(context, authType.profileName);
-    } catch (e) {
-      context.print.error(`Failed to get profile: ${e.message || e}`);
-      await context.usageData.emitError(e);
-      exitOnNextTick(1);
+    } catch (err) {
+      throw new AmplifyError(
+        'ProfileConfigurationError',
+        {
+          message: 'Failed to get profile credentials',
+          details: err.message,
+        },
+        err,
+      );
     }
   } else if (authType.type === 'accessKeys') {
     awsConfig = loadConfigFromPath(projectConfigInfo.config.awsConfigFilePath);
@@ -689,7 +722,9 @@ async function newUserCheck(context: $TSContext) {
       }
     }
     if (context.exeInfo.inputParams.yes) {
-      throw new Error('AWS access credentials can not be found.');
+      throw new AmplifyError('ConfigurationError', {
+        message: 'AWS access credentials can not be found.',
+      });
     } else {
       context.print.info('AWS access credentials can not be found.');
       const answer = await prompt([
@@ -769,10 +804,15 @@ export async function getAwsConfig(context: $TSContext): Promise<AwsSdkConfig> {
     if (awsConfigInfo.config.useProfile) {
       try {
         resultAWSConfigInfo = await systemConfigManager.getProfiledAwsConfig(context, awsConfigInfo.config.profileName);
-      } catch (e) {
-        context.print.error(`Failed to get profile: ${e.message || e}`);
-        await context.usageData.emitError(e);
-        exitOnNextTick(1);
+      } catch (err) {
+        throw new AmplifyError(
+          'ProfileConfigurationError',
+          {
+            message: 'Failed to get profile credentials',
+            details: err.message,
+          },
+          err,
+        );
       }
     } else {
       resultAWSConfigInfo = {
@@ -787,15 +827,22 @@ export async function getAwsConfig(context: $TSContext): Promise<AwsSdkConfig> {
     try {
       resultAWSConfigInfo = await getTempCredsWithAdminTokens(context, appId);
     } catch (err) {
-      context.print.error('Failed to fetch Amplify Studio credentials');
-      throw new Error(err);
+      throw new AmplifyError(
+        'AmplifyStudioLoginError',
+        {
+          message: 'Failed to fetch Amplify Studio credentials',
+          details: err.message,
+        },
+        err,
+      );
     }
   }
 
+  // HTTP_PROXY & HTTPS_PROXY env vars are read automatically by ProxyAgent, but we check to see if they are set before using the proxy
   if (httpProxy) {
     resultAWSConfigInfo = {
       ...resultAWSConfigInfo,
-      httpOptions: { agent: proxyAgent(httpProxy) },
+      httpOptions: { agent: new ProxyAgent() },
     };
   }
 
@@ -827,7 +874,7 @@ async function determineAuthFlow(context: $TSContext, projectConfig?: ProjectCon
   useProfile = useProfile ?? projectConfig?.config?.useProfile;
   profileName = profileName ?? projectConfig?.config?.profileName;
 
-  const generalCreds = projectConfig?.configLevel === 'general';
+  const generalCreds = projectConfig?.configLevel === 'general' || cfnParams?.configLevel === 'general';
 
   if (generalCreds) {
     return { type: 'general' };
@@ -838,7 +885,12 @@ async function determineAuthFlow(context: $TSContext, projectConfig?: ProjectCon
   }
 
   if (accessKeyId && secretAccessKey && region) {
-    return { type: 'accessKeys', accessKeyId, region, secretAccessKey };
+    return {
+      type: 'accessKeys',
+      accessKeyId,
+      region,
+      secretAccessKey,
+    };
   }
 
   if (projectConfig?.config?.awsConfigFilePath) {
@@ -867,13 +919,17 @@ async function determineAuthFlow(context: $TSContext, projectConfig?: ProjectCon
     if (process.env.AWS_SDK_LOAD_CONFIG) {
       profileName = profileName || process.env.AWS_PROFILE || 'default';
       return { type: 'profile', profileName };
-    } else {
-      accessKeyId = accessKeyId || process.env.AWS_ACCESS_KEY_ID;
-      secretAccessKey = secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY;
-      region = region || resolveRegion();
-      if (accessKeyId && secretAccessKey && region) {
-        return { type: 'accessKeys', accessKeyId, region, secretAccessKey };
-      }
+    }
+    accessKeyId = accessKeyId || process.env.AWS_ACCESS_KEY_ID;
+    secretAccessKey = secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY;
+    region = region || resolveRegion();
+    if (accessKeyId && secretAccessKey && region) {
+      return {
+        type: 'accessKeys',
+        accessKeyId,
+        region,
+        secretAccessKey,
+      };
     }
   }
 
@@ -881,8 +937,8 @@ async function determineAuthFlow(context: $TSContext, projectConfig?: ProjectCon
     const errorMessage = 'Failed to resolve AWS credentials with --yes flag.';
     const docsUrl = 'https://docs.amplify.aws/cli/usage/headless';
     context.print.error(errorMessage);
-    context.print.info(`Access keys for continuous integration can be configured with headless paramaters: ${chalk.green(docsUrl)}`);
-    await context.usageData.emitError(errorMessage);
+    context.print.info(`Access keys for continuous integration can be configured with headless parameters: ${chalk.green(docsUrl)}`);
+    await context.usageData.emitError(new Error(errorMessage));
     exitOnNextTick(1);
   }
 
@@ -893,7 +949,7 @@ async function determineAuthFlow(context: $TSContext, projectConfig?: ProjectCon
   return { type: authType };
 }
 
-async function askAuthType(isAdminAvailable: boolean = false): Promise<AuthFlow> {
+async function askAuthType(isAdminAvailable = false): Promise<AuthFlow> {
   let choices: { name: string; value: AuthFlow }[] = [
     { name: 'AWS profile', value: 'profile' },
     { name: 'AWS access keys', value: 'accessKeys' },

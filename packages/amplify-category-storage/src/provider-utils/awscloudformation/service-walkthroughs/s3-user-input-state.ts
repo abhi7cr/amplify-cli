@@ -9,8 +9,8 @@ import {
   exitOnNextTick,
   JSONUtilities,
   pathManager,
-} from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
+} from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import {
@@ -90,8 +90,8 @@ export type S3InputStateOptions = {
  * @returns true  - if resource can be transformed (its cli-inputs file has been generated)
  *          false - otherwise
  */
-export function canResourceBeTransformed(resourceName: string): boolean {
-  const resourceInputState = new S3InputState(resourceName, undefined);
+export function canResourceBeTransformed(context: $TSContext, resourceName: string): boolean {
+  const resourceInputState = new S3InputState(context, resourceName, undefined);
   return resourceInputState.cliInputFileExists();
 }
 
@@ -104,7 +104,7 @@ export class S3InputState {
   _inputPayload: S3UserInputs | undefined; //S3 options selected by user
   buildFilePath: string;
 
-  constructor(resourceName: string, userInput: S3UserInputs | undefined) {
+  constructor(private readonly context: $TSContext, resourceName: string, userInput: S3UserInputs | undefined) {
     this._category = AmplifyCategories.STORAGE;
     this._service = AmplifySupportedService.S3;
     const projectBackendDirPath = pathManager.getBackendDirPath();
@@ -122,18 +122,13 @@ export class S3InputState {
       }
     }
     //validate CLI inputs
-    this.isCLIInputsValid(this._inputPayload);
+    void this.isCLIInputsValid(this._inputPayload);
   }
 
   getOldS3ParamsForMigration(): MigrationParams {
     const backendDir = pathManager.getBackendDirPath();
     const oldParametersFilepath = path.join(backendDir, AmplifyCategories.STORAGE, this._resourceName, 'parameters.json');
-    const oldCFNFilepath = path.join(
-      backendDir,
-      AmplifyCategories.STORAGE,
-      this._resourceName,
-      's3-cloudformation-template.json',
-    );
+    const oldCFNFilepath = path.join(backendDir, AmplifyCategories.STORAGE, this._resourceName, 's3-cloudformation-template.json');
     const oldStorageParamsFilepath = path.join(backendDir, AmplifyCategories.STORAGE, this._resourceName, `storage-params.json`);
     const oldParameters = JSONUtilities.readJson<$TSAny>(oldParametersFilepath, { throwIfNotExist: true });
     const oldCFN = JSONUtilities.readJson<$TSAny>(oldCFNFilepath, { throwIfNotExist: true });
@@ -151,11 +146,11 @@ export class S3InputState {
 
   inferAuthPermissions(oldParams: $TSAny): $TSAny[] {
     if (
-       oldParams.selectedAuthenticatedPermissions && (
-       (oldParams.s3PermissionsAuthenticatedPublic && oldParams.s3PermissionsAuthenticatedPublic != 'DISALLOW') ||
-       (oldParams.s3PermissionsAuthenticatedPrivate && oldParams.s3PermissionsAuthenticatedPrivate != 'DISALLOW') ||
-       (oldParams.s3PermissionsAuthenticatedProtected && oldParams.s3PermissionsAuthenticatedProtected != 'DISALLOW') ||
-       (oldParams.s3PermissionsAuthenticatedUploads && oldParams.s3PermissionsAuthenticatedUploads != 'DISALLOW'))
+      oldParams.selectedAuthenticatedPermissions &&
+      ((oldParams.s3PermissionsAuthenticatedPublic && oldParams.s3PermissionsAuthenticatedPublic != 'DISALLOW') ||
+        (oldParams.s3PermissionsAuthenticatedPrivate && oldParams.s3PermissionsAuthenticatedPrivate != 'DISALLOW') ||
+        (oldParams.s3PermissionsAuthenticatedProtected && oldParams.s3PermissionsAuthenticatedProtected != 'DISALLOW') ||
+        (oldParams.s3PermissionsAuthenticatedUploads && oldParams.s3PermissionsAuthenticatedUploads != 'DISALLOW'))
     ) {
       return oldParams.selectedAuthenticatedPermissions;
     } else {
@@ -164,22 +159,22 @@ export class S3InputState {
   }
   inferGuestPermissions(oldParams: $TSAny): $TSAny[] {
     if (
-      oldParams.selectedGuestPermissions && (
-      (oldParams.s3PermissionsGuestPublic && oldParams.s3PermissionsGuestPublic != 'DISALLOW') ||
-      (oldParams.s3PermissionsGuestPrivate && oldParams.s3PermissionsGuestPrivate != 'DISALLOW') ||
-      (oldParams.s3PermissionsGuestProtected && oldParams.s3PermissionsGuestProtected != 'DISALLOW') ||
-      (oldParams.s3PermissionsGuestUploads && oldParams.s3PermissionsGuestUploads != 'DISALLOW'))
-   ) {
-     return oldParams.selectedGuestPermissions;
-   } else {
-     return [];
-   }
+      oldParams.selectedGuestPermissions &&
+      ((oldParams.s3PermissionsGuestPublic && oldParams.s3PermissionsGuestPublic != 'DISALLOW') ||
+        (oldParams.s3PermissionsGuestPrivate && oldParams.s3PermissionsGuestPrivate != 'DISALLOW') ||
+        (oldParams.s3PermissionsGuestProtected && oldParams.s3PermissionsGuestProtected != 'DISALLOW') ||
+        (oldParams.s3PermissionsGuestUploads && oldParams.s3PermissionsGuestUploads != 'DISALLOW'))
+    ) {
+      return oldParams.selectedGuestPermissions;
+    } else {
+      return [];
+    }
   }
 
   genInputParametersForMigration(oldS3Params: MigrationParams): S3UserInputs {
     const oldParams = oldS3Params.parameters;
     const storageParams = oldS3Params.storageParams;
-    let userInputs: S3UserInputs = {
+    const userInputs: S3UserInputs = {
       resourceName: this._resourceName,
       bucketName: oldParams.bucketName,
       policyUUID: buildShortUUID(), //Since UUID is unique for every resource, we re-create the policy names with new UUID.
@@ -214,7 +209,7 @@ export class S3InputState {
       }
     }
 
-    if (storageParams && storageParams.hasOwnProperty('groupPermissionMap')) {
+    if (storageParams && Object.prototype.hasOwnProperty.call(storageParams, 'groupPermissionMap')) {
       userInputs.groupAccess = S3InputState.getPolicyMapFromStorageParamPolicyMap(storageParams.groupPermissionMap);
     }
 
@@ -237,12 +232,7 @@ export class S3InputState {
   public checkNeedsMigration(): boolean {
     const backendDir = pathManager.getBackendDirPath();
     const oldParametersFilepath = path.join(backendDir, AmplifyCategories.STORAGE, this._resourceName, 'parameters.json');
-    const oldCFNFilepath = path.join(
-      backendDir,
-      AmplifyCategories.STORAGE,
-      this._resourceName,
-      's3-cloudformation-template.json',
-    );
+    const oldCFNFilepath = path.join(backendDir, AmplifyCategories.STORAGE, this._resourceName, 's3-cloudformation-template.json');
     return fs.existsSync(oldParametersFilepath) && fs.existsSync(oldCFNFilepath);
   }
 
@@ -313,7 +303,7 @@ export class S3InputState {
     if (this._inputPayload) {
       this._inputPayload.adminTriggerFunction = adminLambdaTrigger;
     } else {
-      throw new Error('Error : Admin Lambda Trigger cannot be installed because S3 recource CLI Input is not initialized.');
+      throw new Error('Error : Admin Lambda Trigger cannot be installed because S3 resource CLI Input is not initialized.');
     }
   }
 
@@ -321,12 +311,12 @@ export class S3InputState {
     if (this._inputPayload) {
       this._inputPayload.adminTriggerFunction = undefined;
     } else {
-      throw new Error('Error : Admin Lambda Trigger cannot be installed because S3 recource CLI Input is not initialized.');
+      throw new Error('Error : Admin Lambda Trigger cannot be installed because S3 resource CLI Input is not initialized.');
     }
   }
 
   /**
-   * Insert the triggerfunction on the S3 bucket for the given prefix.
+   * Insert the triggerFunction on the S3 bucket for the given prefix.
    * Throws error if a different trigger function is already configured on the given prefix.
    * used by categories like Predictions
    * @param triggerFunctionParams
@@ -336,13 +326,13 @@ export class S3InputState {
     if (!this._inputPayload) {
       throw new Error(`Error installing additional Lambda Trigger : Storage resource ${this._resourceName} not configured`);
     }
-    if ( triggerFunctionParams.triggerPrefix ) {
+    if (triggerFunctionParams.triggerPrefix) {
       this._confirmLambdaTriggerPrefixUnique(triggerFunctionParams.triggerFunction, triggerFunctionParams.triggerPrefix);
     }
     if ((this._inputPayload as S3UserInputs).additionalTriggerFunctions) {
       let functionExists = false;
       const existingTriggerFunctions = (this._inputPayload as S3UserInputs).additionalTriggerFunctions;
-      additionalTriggerFunctions = existingTriggerFunctions?.map(functionParams => {
+      additionalTriggerFunctions = existingTriggerFunctions?.map((functionParams) => {
         if (
           functionParams.triggerPrefix === triggerFunctionParams.triggerPrefix &&
           functionParams.triggerFunction === triggerFunctionParams.triggerFunction
@@ -381,7 +371,7 @@ export class S3InputState {
     if (!cliInputs) {
       cliInputs = this.getCliInputPayload();
     }
-    const schemaValidator = new CLIInputSchemaValidator(this._service, this._category, 'S3UserInputs');
+    const schemaValidator = new CLIInputSchemaValidator(this.context, this._service, this._category, 'S3UserInputs');
     return await schemaValidator.validateInput(JSON.stringify(cliInputs));
   }
 
@@ -444,13 +434,14 @@ export class S3InputState {
   }
 
   public static getTriggerLambdaPermissionsFromInputPermission(triggerPermissions: S3PermissionType) {
+    // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
     switch (triggerPermissions) {
       case S3PermissionType.CREATE_AND_UPDATE: //PUT, POST, and COPY
         return S3TriggerEventType.OBJ_PUT_POST_COPY;
       case S3PermissionType.DELETE:
         return S3TriggerEventType.OBJ_REMOVED;
     }
-    throw new Error(`Unkown Trigger Lambda Permission Type ${triggerPermissions}`);
+    throw new Error(`Unknown Trigger Lambda Permission Type ${triggerPermissions}`);
   }
 
   public static getCfnPermissionsFromInputPermissions(selectedPermissions: S3PermissionType[] | undefined) {
@@ -467,7 +458,7 @@ export class S3InputState {
 
   public static getPolicyMapFromCfnPolicyMap(groupCFNPolicyMap: GroupCFNAccessType) {
     if (groupCFNPolicyMap) {
-      let result: GroupAccessType = {};
+      const result: GroupAccessType = {};
       for (const groupName of Object.keys(groupCFNPolicyMap)) {
         result[groupName] = S3InputState.getInputPermissionsFromCfnPermissions(groupCFNPolicyMap[groupName]);
       }
@@ -481,7 +472,7 @@ export class S3InputState {
     groupStorageParamsPolicyMap: GroupStorageParamsAccessType,
   ): GroupAccessType | undefined {
     if (groupStorageParamsPolicyMap) {
-      let result: GroupAccessType = {};
+      const result: GroupAccessType = {};
       for (const groupName of Object.keys(groupStorageParamsPolicyMap)) {
         result[groupName] = S3InputState.getInputPermissionsFromStorageParamPermissions(groupStorageParamsPolicyMap[groupName]);
       }
@@ -493,7 +484,7 @@ export class S3InputState {
 
   public static getPolicyMapFromStorageParamsPolicyMap(groupStorageParamsPolicyMap: GroupStorageParamsAccessType) {
     if (groupStorageParamsPolicyMap) {
-      let result: GroupAccessType = {};
+      const result: GroupAccessType = {};
       for (const groupName of Object.keys(groupStorageParamsPolicyMap)) {
         result[groupName] = S3InputState.getInputPermissionsFromStorageParamPermissions(groupStorageParamsPolicyMap[groupName]);
       }
@@ -503,22 +494,22 @@ export class S3InputState {
     }
   }
 
-  updateInputPayload(props: S3InputStateOptions) {
+  async updateInputPayload(props: S3InputStateOptions) {
     // Overwrite
     this._inputPayload = props.inputPayload;
 
     // validate cli-inputs.json
-    const schemaValidator = new CLIInputSchemaValidator(this._service, this._category, 'S3UserInputs');
-    schemaValidator.validateInput(JSON.stringify(this._inputPayload!));
+    const schemaValidator = new CLIInputSchemaValidator(this.context, this._service, this._category, 'S3UserInputs');
+    await schemaValidator.validateInput(JSON.stringify(this._inputPayload!));
   }
 
-  public static getInstance(props: S3InputStateOptions): S3InputState {
+  public static async getInstance(context: $TSContext, props: S3InputStateOptions): Promise<S3InputState> {
     if (!S3InputState.s3InputState) {
-      S3InputState.s3InputState = new S3InputState(props.resourceName, props.inputPayload);
+      S3InputState.s3InputState = new S3InputState(context, props.resourceName, props.inputPayload);
     }
     //update flow
     if (props.inputPayload) {
-      S3InputState.s3InputState.updateInputPayload(props);
+      await S3InputState.s3InputState.updateInputPayload(props);
     }
     return S3InputState.s3InputState;
   }
@@ -544,10 +535,6 @@ export class S3InputState {
 
     fs.ensureDirSync(path.join(pathManager.getBackendDirPath(), this._category, this._resourceName));
 
-    try {
-      JSONUtilities.writeJson(this._cliInputsFilePath, cliInputs);
-    } catch (e) {
-      throw e;
-    }
+    JSONUtilities.writeJson(this._cliInputsFilePath, cliInputs);
   }
 }

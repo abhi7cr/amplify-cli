@@ -16,7 +16,7 @@ import {
   removeHeadlessApi,
   updateApiSchema,
   updateHeadlessApi,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { AddApiRequest, UpdateApiRequest } from 'amplify-headless-interface';
 import { existsSync } from 'fs';
 import { readFileSync } from 'fs-extra';
@@ -50,7 +50,7 @@ describe('amplify add api (GraphQL)', () => {
 
     transformConfig.Version = TRANSFORM_BASE_VERSION;
     const apiRoot = path.join(projRoot, 'amplify', 'backend', 'api', name);
-    writeTransformerConfiguration(apiRoot, transformConfig);
+    await writeTransformerConfiguration(apiRoot, transformConfig);
 
     await amplifyPush(projRoot);
 

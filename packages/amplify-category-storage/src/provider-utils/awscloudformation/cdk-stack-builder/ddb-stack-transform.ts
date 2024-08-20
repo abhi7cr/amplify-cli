@@ -1,20 +1,20 @@
-import { AmplifyDDBResourceTemplate } from '@aws-amplify/cli-extensibility-helper';
-import * as cdk from '@aws-cdk/core';
-import { App } from '@aws-cdk/core';
-import { $TSAny, buildOverrideDir, JSONUtilities, pathManager } from 'amplify-cli-core';
-import { formatter, printer } from 'amplify-prompts';
+import { getProjectInfo } from '@aws-amplify/cli-extensibility-helper';
+import { $TSContext, AmplifyError, buildOverrideDir, JSONUtilities, pathManager, runOverride } from '@aws-amplify/amplify-cli-core';
+import * as cdk from 'aws-cdk-lib';
 import * as fs from 'fs-extra';
-import os from 'os';
 import * as path from 'path';
-import * as vm from 'vm2';
+import { getDdbAttrType } from '../cfn-template-utils';
 import { DynamoDBCLIInputs } from '../service-walkthrough-types/dynamoDB-user-input-types';
 import { DynamoDBInputState } from '../service-walkthroughs/dynamoDB-input-state';
 import { AmplifyDDBResourceStack } from './ddb-stack-builder';
 import { AmplifyDDBResourceInputParameters } from './types';
-import { getDdbAttrType } from '../cfn-template-utils';
 
+/**
+ * Entry point class to transform User parameters into stack and apply overrides
+ */
 export class DDBStackTransform {
-  app: App;
+  app: cdk.App;
+  _context: $TSContext;
   _cliInputs: DynamoDBCLIInputs;
   _resourceTemplateObj: AmplifyDDBResourceStack | undefined;
   _cliInputsState: DynamoDBInputState;
@@ -22,17 +22,21 @@ export class DDBStackTransform {
   _cfnInputParams!: AmplifyDDBResourceInputParameters;
   _resourceName: string;
 
-  constructor(resourceName: string) {
-    this.app = new App();
+  constructor(context: $TSContext, resourceName: string) {
+    this.app = new cdk.App();
+    this._context = context;
     this._resourceName = resourceName;
 
     // Validate the cli-inputs.json for the resource
-    this._cliInputsState = new DynamoDBInputState(resourceName);
+    this._cliInputsState = new DynamoDBInputState(context, resourceName);
     this._cliInputs = this._cliInputsState.getCliInputPayload();
-    this._cliInputsState.isCLIInputsValid();
+    void this._cliInputsState.isCLIInputsValid();
   }
 
-  async transform() {
+  /**
+   *  transforms cli-inputs into dynamoDB stack
+   */
+  async transform(): Promise<void> {
     // Generate  cloudformation stack from cli-inputs.json
     await this.generateStack();
 
@@ -46,7 +50,10 @@ export class DDBStackTransform {
     this.saveBuildFiles();
   }
 
-  generateCfnInputParameters() {
+  /**
+   * generates cfn input parameters from cli-inputs
+   */
+  generateCfnInputParameters(): void {
     this._cfnInputParams = {
       tableName: this._cliInputs.tableName,
       partitionKeyName: this._cliInputs.partitionKey.fieldName,
@@ -58,7 +65,10 @@ export class DDBStackTransform {
     }
   }
 
-  async generateStack() {
+  /**
+   * generates dynamoDB stack
+   */
+  async generateStack(): Promise<void> {
     this._resourceTemplateObj = new AmplifyDDBResourceStack(this.app, 'AmplifyDDBResourceStack', this._cliInputs);
 
     // Add Parameters
@@ -170,56 +180,41 @@ export class DDBStackTransform {
     );
   }
 
-  async applyOverrides() {
+  /**
+   * apply overrides to dynamoDB stack
+   */
+  async applyOverrides(): Promise<void> {
     const backendDir = pathManager.getBackendDirPath();
     const resourceDirPath = pathManager.getResourceDirectoryPath(undefined, 'storage', this._resourceName);
-    const overrideJSFilePath = path.resolve(path.join(resourceDirPath, 'build', 'override.js'));
-
-    const isBuild = await buildOverrideDir(backendDir, resourceDirPath).catch(error => {
-      printer.error(`Build error : ${error.message}`);
-      throw new Error(error);
-    });
+    const isBuild = await buildOverrideDir(backendDir, resourceDirPath);
     // skip if packageManager or override.ts not found
     if (isBuild) {
-      const { override } = await import(overrideJSFilePath).catch(error => {
-        formatter.list(['No override File Found', `To override ${this._resourceName} run amplify override auth ${this._resourceName} `]);
-        return undefined;
-      });
-
-      if (typeof override === 'function' && override) {
-        const overrideCode: string = await fs.readFile(overrideJSFilePath, 'utf-8').catch(() => {
-          formatter.list(['No override File Found', `To override ${this._resourceName} run amplify override auth`]);
-          return '';
-        });
-
-        const sandboxNode = new vm.NodeVM({
-          console: 'inherit',
-          timeout: 5000,
-          sandbox: {},
-          require: {
-            context: 'sandbox',
-            builtin: ['path'],
-            external: true,
+      const projectInfo = getProjectInfo();
+      try {
+        await runOverride(resourceDirPath, this._resourceTemplateObj, projectInfo);
+      } catch (err) {
+        throw new AmplifyError(
+          'InvalidOverrideError',
+          {
+            message: `Executing overrides failed.`,
+            details: err.message,
+            resolution: 'There may be runtime errors in your overrides file. If so, fix the errors and try again.',
           },
-        });
-        try {
-          await sandboxNode.run(overrideCode, overrideJSFilePath).override(this._resourceTemplateObj as AmplifyDDBResourceTemplate);
-        } catch (err: $TSAny) {
-          const error = new Error(`Skipping override due to ${err}${os.EOL}`);
-          printer.error(`${error}`);
-          error.stack = undefined;
-          throw error;
-        }
+          err,
+        );
       }
     }
   }
 
-  saveBuildFiles() {
+  /**
+   * generate build files
+   */
+  saveBuildFiles(): void {
     if (this._resourceTemplateObj) {
       this._cfn = JSON.parse(this._resourceTemplateObj.renderCloudFormationTemplate());
     }
 
-    // store files in local-filesysten
+    // store files in local-filesystem
 
     fs.ensureDirSync(this._cliInputsState.buildFilePath);
     const cfnFilePath = path.resolve(path.join(this._cliInputsState.buildFilePath, `${this._resourceName}-cloudformation-template.json`));

@@ -1,11 +1,21 @@
-import { $TSAny, $TSContext, exitOnNextTick, ResourceAlreadyExistsError, ServiceSelection, stateManager } from 'amplify-cli-core';
-import { printer } from 'amplify-prompts';
-import { IS3Service } from 'amplify-util-import';
+import { ensureEnvParamManager } from '@aws-amplify/amplify-environment-parameters';
+import {
+  $TSAny,
+  $TSContext,
+  AmplifyError,
+  exitOnNextTick,
+  ResourceAlreadyExistsError,
+  ServiceSelection,
+  stateManager,
+} from '@aws-amplify/amplify-cli-core';
+import { printer } from '@aws-amplify/amplify-prompts';
+import { IS3Service } from '@aws-amplify/amplify-util-import';
 import { Bucket } from 'aws-sdk/clients/s3';
 import Enquirer from 'enquirer';
 import _ from 'lodash';
 import { v4 as uuid } from 'uuid';
 import { resourceAlreadyExists } from '../service-walkthroughs/s3-walkthrough';
+// eslint-disable-next-line import/no-cycle
 import { checkIfAuthExists } from '../storage-configuration-helpers';
 import { importMessages } from './messages';
 import {
@@ -20,14 +30,17 @@ import {
   S3ResourceParameters,
 } from './types';
 
+/**
+ * Entry point for importing s3 bucket
+ */
 export const importS3 = async (
   context: $TSContext,
   serviceSelection: ServiceSelection,
   previousResourceParameters: S3ResourceParameters | undefined,
   providerPluginInstance?: ProviderUtils,
-  printSuccessMessage: boolean = true,
+  printSuccessMessage = true,
 ): Promise<{ envSpecificParameters: S3EnvSpecificResourceParameters } | undefined> => {
-  let resourceName: string | undefined = resourceAlreadyExists();
+  const resourceName: string | undefined = resourceAlreadyExists();
 
   if (resourceName && !previousResourceParameters) {
     const errMessage = 'Amazon S3 storage was already added to your project.';
@@ -49,7 +62,7 @@ export const importS3 = async (
   );
 
   if (!importServiceWalkthroughResult) {
-    return;
+    return undefined;
   }
 
   const { questionParameters, answers } = importServiceWalkthroughResult;
@@ -68,12 +81,12 @@ export const importS3 = async (
   };
 };
 
-const printSuccess = (bucketName: string) => {
+const printSuccess = (bucketName: string): void => {
   printer.info('');
   printer.info(`✅ S3 Bucket '${bucketName}' was successfully imported.`);
   printer.info('');
   printer.info('Next steps:');
-  printer.info(`- This resource can now be accessed from REST APIs (‘amplify add api’) and Functions (‘amplify add function’)`);
+  printer.info('- This resource can now be accessed from REST APIs (`amplify add api`) and Functions (`amplify add function`)');
   printer.info('- Use Amplify Libraries to add, upload, and download objects to your frontend app');
   printer.info('  - iOS: https://docs.amplify.aws/lib/storage/getting-started/q/platform/ios');
   printer.info('  - Android: https://docs.amplify.aws/lib/storage/getting-started/q/platform/android');
@@ -88,7 +101,7 @@ const importServiceWalkthrough = async (
 ): Promise<{ questionParameters: S3ImportParameters; answers: S3ImportAnswers } | undefined> => {
   await ensureAuth(context);
 
-  let authResources = (await context.amplify.getResourceStatus('auth')).allResources.filter(
+  const authResources = (await context.amplify.getResourceStatus('auth')).allResources.filter(
     (r: { service: string }) => r.service === 'Cognito',
   );
 
@@ -101,10 +114,10 @@ const importServiceWalkthrough = async (
   // Get list of user pools to see if there is anything to import
   const bucketList = await s3.listBuckets();
 
-  // Return it no userpools found in the project's region
+  // Return if no User Pools found in the project's region
   if (_.isEmpty(bucketList)) {
     printer.info(importMessages.NoS3BucketsToImport);
-    return;
+    return undefined;
   }
 
   const questionParameters: S3ImportParameters = createParameters(providerName, bucketList);
@@ -126,7 +139,7 @@ const importServiceWalkthrough = async (
 
     printer.info(importMessages.OneBucket(answers.bucketName));
   } else {
-    const bucketNameList = bucketList.map(b => b.Name!);
+    const bucketNameList = bucketList.map((b) => b.Name!);
 
     const bucketNameQuestion = {
       type: 'autocomplete',
@@ -138,7 +151,8 @@ const importServiceWalkthrough = async (
       footer: importMessages.AutoCompleteFooter,
     };
 
-    const { bucketName } = await enquirer.prompt(bucketNameQuestion as $TSAny); // any case needed because async validation TS definition is not up to date
+    // any case needed because async validation TS definition is not up to date
+    const { bucketName } = await enquirer.prompt(bucketNameQuestion as $TSAny);
 
     answers.bucketName = bucketName;
   }
@@ -176,7 +190,8 @@ const ensureAuth = async (context: $TSContext): Promise<void> => {
       header: 'You need to add auth (Amazon Cognito) to your project in order to add storage for user files.',
     };
 
-    const addOrImportAnswer: { addOrImport: 'add' | 'import' | 'cancel' } = await Enquirer.prompt(addOrImportQuestion as $TSAny); // any case needed because async validation TS definition is not up to date
+    // any case needed because async validation TS definition is not up to date
+    const addOrImportAnswer: { addOrImport: 'add' | 'import' | 'cancel' } = await Enquirer.prompt(addOrImportQuestion as $TSAny);
 
     if (addOrImportAnswer.addOrImport === 'cancel') {
       printer.info('');
@@ -207,6 +222,9 @@ const createParameters = (providerName: string, bucketList: Bucket[]): S3ImportP
   return questionParameters;
 };
 
+/**
+ * Update storage state files
+ */
 export const updateStateFiles = async (
   context: $TSContext,
   questionParameters: S3ImportParameters,
@@ -276,9 +294,13 @@ const createEnvSpecificResourceParameters = (
   return envSpecificResourceParameters;
 };
 
+/**
+ * initialize environment with imported s3 bucket
+ */
 export const importedS3EnvInit = async (
   context: $TSContext,
   resourceName: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   resource: S3MetaConfiguration,
   resourceParameters: S3ResourceParameters,
   providerName: string,
@@ -288,12 +310,12 @@ export const importedS3EnvInit = async (
   headlessParams: ImportS3HeadlessParameters,
 ): Promise<{ doServiceWalkthrough?: boolean; succeeded?: boolean; envSpecificParameters?: S3EnvSpecificResourceParameters }> => {
   const s3 = await providerUtils.createS3Service(context);
-  const isPulling = context.input.command === 'pull' || (context.input.command === 'env' && context.input.subCommands[0] === 'pull');
-  const isEnvAdd = context.input.command === 'env' && context.input.subCommands[0] === 'add';
+  const isPulling = context.input.command === 'pull' || (context.input.command === 'env' && context.input.subCommands?.[0] === 'pull');
+  const isEnvAdd = context.input.command === 'env' && context.input.subCommands?.[0] === 'add';
 
   if (isInHeadlessMode) {
     // Validate required parameters' presence and merge into parameters
-    return await headlessImport(context, s3, providerName, resourceName, resource, resourceParameters, headlessParams);
+    return headlessImport(context, s3, providerName, resourceParameters, headlessParams, currentEnvSpecificParameters);
   }
 
   // If we are pulling, take the current values if present to skip unneeded service walkthrough
@@ -308,21 +330,30 @@ export const importedS3EnvInit = async (
       if (currentResource && currentResource.output) {
         const { BucketName, Region } = currentResource.output;
 
+        /* eslint-disable no-param-reassign */
         currentEnvSpecificParameters.bucketName = BucketName;
         currentEnvSpecificParameters.region = Region;
+        /* eslint-enable */
       }
     }
   } else if (isEnvAdd && context.exeInfo.sourceEnvName) {
     // Check to see if we have a source environment set (in case of env add), and ask customer if the want to import the same resource
     // from the existing environment or import a different one. Check if all the values are having some value that can be validated and
     // if not fall back to full service walkthrough.
-    const sourceEnvParams = getSourceEnvParameters(context.exeInfo.sourceEnvName, 'storage', resourceName);
+    const resourceParamManager = (await ensureEnvParamManager(context.exeInfo.sourceEnvName)).instance.getResourceParamManager(
+      'storage',
+      resourceName,
+    );
 
-    if (sourceEnvParams) {
+    if (resourceParamManager.hasAnyParams()) {
       const { importExisting } = await Enquirer.prompt<{ importExisting: boolean }>({
         name: 'importExisting',
         type: 'confirm',
-        message: importMessages.ImportPreviousBucket(resourceName, sourceEnvParams.bucketName, context.exeInfo.sourceEnvName),
+        message: importMessages.ImportPreviousBucket(
+          resourceName,
+          resourceParamManager.getParam('bucketName')!,
+          context.exeInfo.sourceEnvName,
+        ),
         footer: importMessages.ImportPreviousResourceFooter,
         initial: true,
         format: (e: $TSAny) => (e ? 'Yes' : 'No'),
@@ -335,8 +366,10 @@ export const importedS3EnvInit = async (
       }
 
       // Copy over the required input arguments to currentEnvSpecificParameters
-      currentEnvSpecificParameters.bucketName = sourceEnvParams.bucketName;
-      currentEnvSpecificParameters.region = sourceEnvParams.region;
+      /* eslint-disable no-param-reassign */
+      currentEnvSpecificParameters.bucketName = resourceParamManager.getParam('bucketName')!;
+      currentEnvSpecificParameters.region = resourceParamManager.getParam('region')!;
+      /* eslint-enable */
     }
   }
 
@@ -385,13 +418,13 @@ const headlessImport = async (
   context: $TSContext,
   s3: IS3Service,
   providerName: string,
-  resourceName: string,
-  resource: S3MetaConfiguration,
   resourceParameters: S3ResourceParameters,
   headlessParams: ImportS3HeadlessParameters,
+  currentEnvSpecificParameters: S3EnvSpecificResourceParameters,
 ): Promise<{ succeeded: boolean; envSpecificParameters: S3EnvSpecificResourceParameters }> => {
   // Validate required parameters' presence and merge into parameters
-  const currentEnvSpecificParameters = ensureHeadlessParameters(resourceParameters, headlessParams);
+  const resolvedEnvParams =
+    headlessParams?.bucketName || headlessParams?.region ? ensureHeadlessParameters(headlessParams) : currentEnvSpecificParameters;
 
   // Validate the parameters, generate the missing ones and import the resource.
   const questionParameters: S3ImportParameters = {
@@ -401,13 +434,13 @@ const headlessImport = async (
 
   const answers: S3ImportAnswers = {
     resourceName: resourceParameters.resourceName,
-    bucketName: currentEnvSpecificParameters.bucketName,
+    bucketName: resolvedEnvParams.bucketName,
   };
 
-  const bucketExists = await s3.bucketExists(currentEnvSpecificParameters.bucketName);
+  const bucketExists = await s3.bucketExists(resolvedEnvParams.bucketName);
 
   if (!bucketExists) {
-    throw new Error(importMessages.BucketNotFound(currentEnvSpecificParameters.bucketName));
+    throw new AmplifyError('StorageImportError', { message: importMessages.BucketNotFound(resolvedEnvParams.bucketName) });
   }
 
   // Save the region as we need to store it in resource parameters
@@ -421,10 +454,7 @@ const headlessImport = async (
   };
 };
 
-const ensureHeadlessParameters = (
-  resourceParameters: S3ResourceParameters,
-  headlessParams: ImportS3HeadlessParameters,
-): S3EnvSpecificResourceParameters => {
+export const ensureHeadlessParameters = (headlessParams: ImportS3HeadlessParameters): S3EnvSpecificResourceParameters => {
   // If we are doing headless mode, validate parameter presence and overwrite the input values from env specific params since they can be
   // different for the current env operation (eg region can mismatch)
 
@@ -440,7 +470,10 @@ const ensureHeadlessParameters = (
   }
 
   if (missingParams.length > 0) {
-    throw new Error(`storage headless is missing the following inputParams ${missingParams.join(', ')}`);
+    throw new AmplifyError('InputValidationError', {
+      message: `storage headless is missing the following inputParams ${missingParams.join(', ')}`,
+      link: 'https://docs.amplify.aws/cli/usage/headless/#--categories',
+    });
   }
 
   const envSpecificParameters: S3EnvSpecificResourceParameters = {
@@ -449,22 +482,4 @@ const ensureHeadlessParameters = (
   };
 
   return envSpecificParameters;
-};
-
-const getSourceEnvParameters = (
-  envName: string,
-  categoryName: string,
-  resourceName: string,
-): S3EnvSpecificResourceParameters | undefined => {
-  const teamProviderInfo = stateManager.getTeamProviderInfo(undefined, {
-    throwIfNotExist: false,
-  });
-
-  if (teamProviderInfo) {
-    const envParameters = _.get(teamProviderInfo, [envName, 'categories', categoryName, resourceName], undefined);
-
-    return envParameters;
-  }
-
-  return undefined;
 };

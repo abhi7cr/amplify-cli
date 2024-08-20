@@ -13,10 +13,10 @@ import {
   functionBuild,
   getBackendAmplifyMeta,
   amplifyPushForce,
-} from 'amplify-e2e-core';
-import _ from 'lodash';
-import { addEnvironmentYes } from '../environment/env';
+  generateRandomShortId,
+} from '@aws-amplify/amplify-e2e-core';
 import { v4 as uuid } from 'uuid';
+import { addEnvironmentYes } from '../environment/env';
 
 describe('function environment variables', () => {
   let projRoot: string;
@@ -32,8 +32,7 @@ describe('function environment variables', () => {
 
   it('configures env vars that are accessible in the cloud', async () => {
     await initJSProjectWithProfile(projRoot);
-    const random = Math.floor(Math.random() * 10000);
-    const functionName = `testfunction${random}`;
+    const functionName = `testfunction${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -56,8 +55,7 @@ describe('function environment variables', () => {
   it('resolves missing env vars on push', async () => {
     // add func w/ env var
     await initJSProjectWithProfile(projRoot);
-    const random = Math.floor(Math.random() * 10000);
-    const functionName = `testfunction${random}`;
+    const functionName = `testfunction${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -90,8 +88,7 @@ describe('function environment variables', () => {
   it('carries over env vars to new env', async () => {
     // add func w/ env var
     await initJSProjectWithProfile(projRoot);
-    const random = Math.floor(Math.random() * 10000);
-    const functionName = `testfunction${random}`;
+    const functionName = `testfunction${generateRandomShortId()}`;
     await addFunction(
       projRoot,
       {
@@ -112,7 +109,7 @@ describe('function environment variables', () => {
   });
 
   it('function force push with no change', async () => {
-    const projectName = `functionNoChange`;
+    const projectName = 'functionNoChange';
     const [shortId] = uuid().split('-');
     const functionName = `testfunction${shortId}`;
     await initJSProjectWithProfile(projRoot, { name: projectName });
@@ -124,7 +121,7 @@ describe('function environment variables', () => {
       },
       'nodejs',
     );
-    await functionBuild(projRoot, {});
+    await functionBuild(projRoot);
     await amplifyPushAuth(projRoot);
     let meta = getBackendAmplifyMeta(projRoot);
     const { lastPushDirHash: beforeDirHash } = meta.function[functionName];

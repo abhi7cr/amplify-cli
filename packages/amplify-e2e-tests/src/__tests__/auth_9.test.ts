@@ -9,7 +9,7 @@ import {
   getUserPool,
   initJSProjectWithProfile,
   nspawn as spawn,
-} from 'amplify-e2e-core';
+} from '@aws-amplify/amplify-e2e-core';
 import { CognitoIdentityServiceProvider } from 'aws-sdk';
 
 const defaultsSettings = {
@@ -30,11 +30,11 @@ describe('amplify auth with trigger', () => {
 
   it('add auth with trigger, push, update auth, push, verify trigger attachment', async () => {
     await initJSProjectWithProfile(projRoot, defaultsSettings);
-    await addAuthWithRecaptchaTrigger(projRoot, {});
+    await addAuthWithRecaptchaTrigger(projRoot);
     await amplifyPushAuth(projRoot);
 
     const meta = getProjectMeta(projRoot);
-    const userPoolId = Object.keys(meta.auth).map(key => meta.auth[key])[0].output.UserPoolId;
+    const userPoolId = Object.keys(meta.auth).map((key) => meta.auth[key])[0].output.UserPoolId;
     let userPool = (await getUserPool(
       userPoolId,
       meta.providers.awscloudformation.Region,
@@ -46,7 +46,7 @@ describe('amplify auth with trigger', () => {
     expect(userPool.UserPool.LambdaConfig.DefineAuthChallenge).toBeDefined();
     expect(userPool.UserPool.LambdaConfig.VerifyAuthChallengeResponse).toBeDefined();
 
-    await updateAuthChangeToUserPoolOnlyAndSetCodeMessages(projRoot, {});
+    await updateAuthChangeToUserPoolOnlyAndSetCodeMessages(projRoot);
 
     await amplifyPushAuth(projRoot);
 
@@ -64,7 +64,7 @@ describe('amplify auth with trigger', () => {
     expect(userPool.UserPool.LambdaConfig.VerifyAuthChallengeResponse).toBeDefined();
   });
 
-  const updateAuthChangeToUserPoolOnlyAndSetCodeMessages = async (cwd: string, settings: any): Promise<void> => {
+  const updateAuthChangeToUserPoolOnlyAndSetCodeMessages = async (cwd: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       const chain = spawn(getCLIPath(), ['update', 'auth'], { cwd, stripColors: true });
 

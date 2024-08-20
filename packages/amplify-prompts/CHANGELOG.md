@@ -3,6 +3,226 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [2.8.6](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.4...@aws-amplify/amplify-prompts@2.8.6) (2023-11-08)
+
+
+### Bug Fixes
+
+* bump versions after unsuccessful release ([#13395](https://github.com/aws-amplify/amplify-cli/issues/13395)) ([7f43363](https://github.com/aws-amplify/amplify-cli/commit/7f433637b052d6dd33fcbf87f390a6b85e9de5b7))
+
+
+
+
+
+## [2.8.5](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.4...@aws-amplify/amplify-prompts@2.8.5) (2023-11-08)
+
+**Note:** Version bump only for package @aws-amplify/amplify-prompts
+
+
+
+
+
+## [2.8.4](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.3...@aws-amplify/amplify-prompts@2.8.4) (2023-09-22)
+
+
+### Bug Fixes
+
+* don't render spinner in non-TTY terminal ([#13242](https://github.com/aws-amplify/amplify-cli/issues/13242)) ([d75d0b2](https://github.com/aws-amplify/amplify-cli/commit/d75d0b295d9fb3cd85b3e9cb0de177f60091def1))
+
+
+
+
+
+## [2.8.3](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.2...@aws-amplify/amplify-prompts@2.8.3) (2023-08-31)
+
+
+### Bug Fixes
+
+* exclude tests from publish ([#13153](https://github.com/aws-amplify/amplify-cli/issues/13153)) ([1b1fe09](https://github.com/aws-amplify/amplify-cli/commit/1b1fe09a1c08be0262a1013f71354abd7160722a))
+
+
+
+
+
+## [2.8.2](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.1...@aws-amplify/amplify-prompts@2.8.2) (2023-08-17)
+
+**Note:** Version bump only for package @aws-amplify/amplify-prompts
+
+
+
+
+
+## [2.8.1](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.8.0...@aws-amplify/amplify-prompts@2.8.1) (2023-08-09)
+
+**Note:** Version bump only for package @aws-amplify/amplify-prompts
+
+
+
+
+
+# [2.8.0](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.7.0...@aws-amplify/amplify-prompts@2.8.0) (2023-06-13)
+
+
+### Features
+
+* display error message instead of object ([#12636](https://github.com/aws-amplify/amplify-cli/issues/12636)) ([811e8fc](https://github.com/aws-amplify/amplify-cli/commit/811e8fcd48f15b37401643b9b13f628acb4708bd))
+
+
+
+
+
+# [2.7.0](https://github.com/aws-amplify/amplify-cli/compare/@aws-amplify/amplify-prompts@2.6.8...@aws-amplify/amplify-prompts@2.7.0) (2023-05-11)
+
+
+### Features
+
+* mock and mock function adds capabilities for function and resource selection ([#12268](https://github.com/aws-amplify/amplify-cli/issues/12268)) ([d18e1a6](https://github.com/aws-amplify/amplify-cli/commit/d18e1a65f885ebd289637d4f77e197b2c6cfe44c))
+
+
+
+
+
+## [2.6.8](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.6...amplify-prompts@2.6.8) (2023-04-14)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+## [2.6.6](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.6-rc.e9e0d157d.0...amplify-prompts@2.6.6) (2023-03-23)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+## [2.6.6-rc.e9e0d157d.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.5...amplify-prompts@2.6.6-rc.e9e0d157d.0) (2023-03-17)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+## [2.6.5](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.4...amplify-prompts@2.6.5) (2023-03-13)
+
+
+### Bug Fixes
+
+* limit the prompter list display options to 10 entries ([#12110](https://github.com/aws-amplify/amplify-cli/issues/12110)) ([53f7b4b](https://github.com/aws-amplify/amplify-cli/commit/53f7b4b57234e472c82e5913f2c0c7b72e8a8af5))
+* merge conflicts and linting ([bdd9f42](https://github.com/aws-amplify/amplify-cli/commit/bdd9f420303872c14db80e38e91c03b627503801))
+* reverting 5 commits to dev branch ([c54da9e](https://github.com/aws-amplify/amplify-cli/commit/c54da9eb69031bd665d50b6cd2dd8d3833c778bc))
+
+
+
+
+
+## [2.6.4](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.3...amplify-prompts@2.6.4) (2023-02-27)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+## [2.6.3](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.2...amplify-prompts@2.6.3) (2023-02-02)
+
+
+### Bug Fixes
+
+* automatic lint fixes ([#11636](https://github.com/aws-amplify/amplify-cli/issues/11636)) ([0e7f70b](https://github.com/aws-amplify/amplify-cli/commit/0e7f70befbe72d17dfb11f5fed1c8609a13d4a97))
+* make prompter multi-select indicator more distinct ([#11742](https://github.com/aws-amplify/amplify-cli/issues/11742)) ([4531c38](https://github.com/aws-amplify/amplify-cli/commit/4531c3819fbf9850d603df443380ae310c85b129))
+
+
+### Reverts
+
+* Revert "chore: fixing main to dev merge conflicts (#11696)" ([00fec46](https://github.com/aws-amplify/amplify-cli/commit/00fec4608096390b5ae2563b5c69453cd48bfa45)), closes [#11696](https://github.com/aws-amplify/amplify-cli/issues/11696)
+
+
+
+
+
+## [2.6.2](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.1...amplify-prompts@2.6.2) (2023-01-03)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+## [2.6.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.6.0...amplify-prompts@2.6.1) (2022-11-17)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+# [2.6.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.5.0...amplify-prompts@2.6.0) (2022-10-13)
+
+
+### Features
+
+* pretty-print for iterative deployment ([#11051](https://github.com/aws-amplify/amplify-cli/issues/11051)) ([4184164](https://github.com/aws-amplify/amplify-cli/commit/418416420756273f286d81384f4e63924deda4a9))
+
+
+
+
+
+# [2.5.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.3.0...amplify-prompts@2.5.0) (2022-09-21)
+
+
+### Features
+
+* unified error handling framework ([#10933](https://github.com/aws-amplify/amplify-cli/issues/10933)) ([cc9a422](https://github.com/aws-amplify/amplify-cli/commit/cc9a422793f4ef620a4ed634b6f55e28e3a8a3a2))
+
+
+
+
+
+# [2.3.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.3.0-rc.224a2e0e4.0...amplify-prompts@2.3.0) (2022-09-06)
+
+**Note:** Version bump only for package amplify-prompts
+
+
+
+
+
+# [2.3.0-rc.224a2e0e4.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.2.0...amplify-prompts@2.3.0-rc.224a2e0e4.0) (2022-08-15)
+
+
+### Features
+
+* pretty print cloudformation event logs  ([#10720](https://github.com/aws-amplify/amplify-cli/issues/10720)) ([aaf2210](https://github.com/aws-amplify/amplify-cli/commit/aaf22103548a329b3092f52736c28c9b5c5b8b8b))
+
+
+
+
+
+# [2.2.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.1.0...amplify-prompts@2.2.0) (2022-06-03)
+
+
+### Features
+
+* prompt interaction time ([#10435](https://github.com/aws-amplify/amplify-cli/issues/10435)) ([a064ae2](https://github.com/aws-amplify/amplify-cli/commit/a064ae2e1a3a8d4e84a1fcb3ec9fc8b4491966d6))
+
+
+
+
+
+# [2.1.0](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.0.1...amplify-prompts@2.1.0) (2022-05-10)
+
+
+### Features
+
+* usage flow logging for interactive and non-interactive cli commands ([#10288](https://github.com/aws-amplify/amplify-cli/issues/10288)) ([da391b1](https://github.com/aws-amplify/amplify-cli/commit/da391b146612d8914f72e558e5503d075456c820)), closes [#10293](https://github.com/aws-amplify/amplify-cli/issues/10293)
+
+
+
+
+
 ## [2.0.1](https://github.com/aws-amplify/amplify-cli/compare/amplify-prompts@2.0.0...amplify-prompts@2.0.1) (2022-04-27)
 
 

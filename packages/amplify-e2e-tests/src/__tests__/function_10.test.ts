@@ -1,8 +1,15 @@
 import {
-  addApiWithBlankSchema, addFunction,
+  addApiWithBlankSchema,
+  addFunction,
   amplifyPush,
-  amplifyPushFunction, createNewProjectDir, deleteProject, deleteProjectDir, initJSProjectWithProfile, updateApiSchema,
-} from 'amplify-e2e-core';
+  amplifyPushFunction,
+  createNewProjectDir,
+  deleteProject,
+  deleteProjectDir,
+  generateRandomShortId,
+  initJSProjectWithProfile,
+  updateApiSchema,
+} from '@aws-amplify/amplify-e2e-core';
 
 describe('test function deploy when other resources are present', () => {
   let projectRoot: string;
@@ -24,13 +31,15 @@ describe('test function deploy when other resources are present', () => {
     await addApiWithBlankSchema(projectRoot, { apiName });
     await updateApiSchema(projectRoot, apiName, 'simple_model.graphql');
     await amplifyPush(projectRoot);
-    const random = Math.floor(Math.random() * 10000);
-    const fnName = `integtestFn${random}`;
-    await addFunction(projectRoot, {
-      name: fnName,
-      functionTemplate: 'Hello World',
-    },
-    'nodejs');
+    const fnName = `integtestFn${generateRandomShortId()}`;
+    await addFunction(
+      projectRoot,
+      {
+        name: fnName,
+        functionTemplate: 'Hello World',
+      },
+      'nodejs',
+    );
     await amplifyPushFunction(projectRoot);
   });
 });

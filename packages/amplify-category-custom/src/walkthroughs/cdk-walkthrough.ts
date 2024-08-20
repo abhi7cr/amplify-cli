@@ -1,5 +1,5 @@
-import { $TSContext, JSONUtilities, pathManager } from 'amplify-cli-core';
-import { printer, prompter } from 'amplify-prompts';
+import { $TSContext, JSONUtilities, pathManager } from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { buildCustomResources } from '../utils/build-custom-resources';
@@ -57,4 +57,7 @@ async function generateSkeletonDir(resourceName: string) {
 
   const cdkFilepath = path.join(targetDir, 'cdk-stack.ts');
   fs.writeFileSync(cdkFilepath, fs.readFileSync(path.join(srcResourceDirPath, 'cdk-stack.ts.sample')));
+
+  const npmRcPath = path.join(targetDir, '.npmrc');
+  fs.writeFileSync(npmRcPath, fs.readFileSync(path.join(srcResourceDirPath, 'sample.npmrc')));
 }

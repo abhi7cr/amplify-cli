@@ -1,4 +1,13 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-empty-function */
+import { $TSAny } from '@aws-amplify/amplify-cli-core';
+import { printer, prompter } from '@aws-amplify/amplify-prompts';
 import { deleteProject, getConfirmation } from '../../../extensions/amplify-helpers/delete-project';
+
+jest.mock('@aws-amplify/amplify-prompts');
+const prompterMock = prompter as jest.Mocked<typeof prompter>;
+const printerMock = printer as jest.Mocked<typeof printer>;
+printerMock.success = jest.fn();
 
 jest.mock('../../../extensions/amplify-helpers/remove-env-from-cloud');
 jest.mock('../../../extensions/amplify-helpers/path-manager');
@@ -11,7 +20,8 @@ jest.mock('../../../extensions/amplify-helpers/get-frontend-plugins', () => ({
 jest.mock('../../../../__mocks__/faked-plugin', () => ({
   deleteConfig: jest.fn(),
 }));
-jest.mock('amplify-cli-core', () => ({
+jest.mock('@aws-amplify/amplify-cli-core', () => ({
+  ...(jest.requireActual('@aws-amplify/amplify-cli-core') as $TSAny),
   FeatureFlags: {
     isInitialized: jest.fn().mockReturnValue(true),
     removeFeatureFlagConfiguration: jest.fn().mockResolvedValue(true),
@@ -31,9 +41,12 @@ jest.mock('../../../extensions/amplify-helpers/get-plugin-instance', () => ({
             throw new Error('listBackendEnvironments error');
           })
           .mockImplementationOnce(() => {
-            const e: any = new Error('listBackendEnvironments error');
-            e.code = 'NotFoundException';
-            throw e;
+            // eslint-disable-next-line no-throw-literal
+            throw {
+              name: 'BucketNotFoundError',
+              message: 'Bucket not found',
+              link: 'https://docs.aws.amazon.com/',
+            };
           }),
       }),
       deleteApp: jest.fn().mockReturnValue({
@@ -43,29 +56,20 @@ jest.mock('../../../extensions/amplify-helpers/get-plugin-instance', () => ({
   }),
 }));
 
-jest.mock('ora', () => {
-  return () => ({
-    start: jest.fn(),
-    fail: jest.fn(),
-    succeed: jest.fn(),
-  });
-});
-
 describe('getConfirmation', () => {
   it('should return proceed object', async () => {
-    const context_stub = {
+    const contextStub: $TSAny = {
       input: {},
-      amplify: {
-        confirmPrompt: () => {},
-      },
+      amplify: {},
     };
-    const result = await getConfirmation(context_stub);
+    prompterMock.yesOrNo = jest.fn();
+    const result = await getConfirmation(contextStub);
     expect(result).toHaveProperty('proceed');
     expect(result).toHaveProperty('deleteS3');
     expect(result).toHaveProperty('deleteAmplifyApp');
   });
   it('should return object when force option is true', async () => {
-    const context_stub = {
+    const contextStub: $TSAny = {
       input: {
         options: {
           force: true,
@@ -77,14 +81,13 @@ describe('getConfirmation', () => {
       deleteS3: true,
       deleteAmplifyApp: true,
     };
-    const result = await getConfirmation(context_stub);
+    const result = await getConfirmation(contextStub);
     expect(result).toStrictEqual(expected);
   });
 });
 
 describe('deleteProject', () => {
-  const success = jest.fn();
-  const context_stub = {
+  const contextStub: $TSAny = {
     input: {
       options: {
         force: true,
@@ -93,24 +96,22 @@ describe('deleteProject', () => {
     amplify: {
       getEnvDetails: () => [],
       getProjectConfig: () => ({ frontend: 'test' }),
+      invokePluginMethod: async () => {},
     },
     filesystem: {
       remove: jest.fn(),
     },
-    print: {
-      success,
-    },
   };
   it('should delete app', async () => {
-    await deleteProject(context_stub);
-    expect(success).toBeCalled();
+    await deleteProject(contextStub);
+    expect(printerMock.success).toBeCalled();
   });
 
   it('throws error when listBackendEnvironments promise rejected', async () => {
-    await expect(deleteProject(context_stub)).rejects.toThrow('listBackendEnvironments error');
+    await expect(deleteProject(contextStub)).rejects.toThrow('Project delete failed.');
   });
 
   it('does not throw not found error when listBackendEnvironments promise rejected', async () => {
-    await expect(deleteProject(context_stub)).resolves.not.toThrow('listBackendEnvironments error');
+    await expect(deleteProject(contextStub)).resolves.not.toThrow('listBackendEnvironments error');
   });
 });

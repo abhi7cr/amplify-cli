@@ -1,7 +1,4 @@
-import { ModelTransformer } from '@aws-amplify/graphql-model-transformer';
-import { MapsToTransformer } from '@aws-amplify/graphql-maps-to-transformer';
-import { AuthTransformer } from '@aws-amplify/graphql-auth-transformer';
-import { GraphQLTransform } from '@aws-amplify/graphql-transformer-core';
+import { transformAndSynth, defaultTransformParams } from '../__e2e_v2__/test-synthesizer';
 import { GraphQLClient } from './utils/graphql-client';
 import { deploy, launchDDBLocal, logDebug, terminateDDB } from './utils/index';
 
@@ -20,21 +17,14 @@ beforeAll(async () => {
     }
     `;
   try {
-    const transformer = new GraphQLTransform({
-      transformers: [new ModelTransformer(), new AuthTransformer(), new MapsToTransformer()],
-      featureFlags: {
-        getBoolean: (value: string, defaultValue?: boolean): boolean => {
-          if (value === 'userSubUsernameForDefaultIdentityClaim') {
-            return false;
-          }
-          return defaultValue;
-        },
-        getNumber: jest.fn(),
-        getString: jest.fn(),
-        getObject: jest.fn(),
-      }
+    const out = transformAndSynth({
+      ...defaultTransformParams,
+      schema: validSchema,
+      transformParameters: {
+        ...defaultTransformParams.transformParameters,
+        useSubUsernameForDefaultIdentityClaim: false,
+      },
     });
-    const out = transformer.transform(validSchema);
 
     let ddbClient;
     ({ dbPath, emulator: ddbEmulator, client: ddbClient } = await launchDDBLocal());

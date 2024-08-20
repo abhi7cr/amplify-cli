@@ -2,5 +2,5 @@
   "name": "ui-builder",
   "type": "util",
   "commands": ["version", "cloneComponentsFromEnv", "generateComponents"],
-  "eventHandlers": ["PostEnvAdd"]
+  "eventHandlers": ["PrePush", "PostEnvAdd", "PostPull", "PostPush"]
 }
